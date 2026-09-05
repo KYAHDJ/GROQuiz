@@ -1,7 +1,7 @@
 import Groq from "groq-sdk";
 
-export const DEFAULT_MODEL = "llama3-70b-8192";
-export const FAST_MODEL = "llama3-8b-8192";
+export const DEFAULT_MODEL = "openai/gpt-oss-120b";
+export const FAST_MODEL = "openai/gpt-oss-20b";
 
 let cachedClient: Groq | null = null;
 

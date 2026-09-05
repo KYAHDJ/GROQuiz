@@ -99,7 +99,7 @@ export default function PdfUpload() {
       <div className="text-center mb-10 max-w-lg">
         <div className="inline-flex items-center gap-2 bg-emerald-500/10 border border-emerald-500/20 rounded-full px-4 py-1.5 mb-5 text-sm text-emerald-400">
           <Sparkles size={14} className="animate-pulse" />
-          Powered by Groq + LLaMA 3
+          Powered by Groq + GPT-OSS
         </div>
         <h1 className="text-4xl sm:text-5xl font-extrabold tracking-tight mb-3 bg-gradient-to-r from-emerald-400 via-teal-300 to-cyan-400 bg-clip-text text-transparent">
           GROQuiz
