@@ -15,8 +15,12 @@ export function getGroqClient(): Groq {
   return cachedClient;
 }
 
-export async function parsePdfBuffer(buffer: Buffer): Promise<{ text: string; numpages: number }> {
-  const pdfParse = (await import("pdf-parse")).default;
-  const data = await pdfParse(buffer);
-  return { text: data.text ?? "", numpages: data.numpages || 1 };
+export async function parsePdfBuffer(
+  buffer: Buffer
+): Promise<{ text: string; numpages: number }> {
+  const { extractText } = await import("unpdf");
+  const { text, totalPages } = await extractText(new Uint8Array(buffer), {
+    mergePages: true,
+  });
+  return { text: text ?? "", numpages: totalPages || 1 };
 }
