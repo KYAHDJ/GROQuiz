@@ -1,8 +1,9 @@
 "use client";
 
 import { useQuiz } from "@/context/QuizContext";
+import { ArrowLeft } from "lucide-react";
+import type { HistoryRecord } from "@/lib/types";
 import {
-  Trophy,
   Target,
   Flame,
   Clock,
@@ -14,9 +15,19 @@ import {
   Zap,
 } from "lucide-react";
 
-export default function ScoreDisplay() {
+export default function ScoreDisplay({
+  record,
+  onBack,
+}: {
+  record?: HistoryRecord;
+  onBack?: () => void;
+}) {
   const { state, resetGame, setScreen } = useQuiz();
-  const { stats, results, questions } = state;
+
+  const isReview = Boolean(record);
+  const stats = record ? record.stats : state.stats;
+  const results = record ? record.results : state.results;
+  const questions = record ? record.questions : state.questions;
   const accuracy = stats.answered
     ? Math.round((stats.correct / stats.answered) * 100)
     : 0;
@@ -54,11 +65,23 @@ export default function ScoreDisplay() {
         <div className="text-6xl sm:text-7xl font-extrabold mb-2">
           <span className={gradeColor[grade] ?? "text-slate-300"}>{grade}</span>
         </div>
-        <h2 className="text-2xl font-bold text-slate-100 mb-1">Session Complete</h2>
+        <h2 className="text-2xl font-bold text-slate-100 mb-1">
+          {isReview ? "Session Review" : "Session Complete"}
+        </h2>
         <p className="text-slate-400 text-sm">
           {stats.correct}/{stats.answered} correct · {totalPoints} total points earned
         </p>
       </div>
+
+      {record && (
+        <button
+          onClick={onBack}
+          className="mb-6 flex items-center gap-2 text-sm text-slate-400 hover:text-cyan-300 transition-colors"
+        >
+          <ArrowLeft size={15} />
+          Back to home
+        </button>
+      )}
 
       <div className="w-full max-w-md grid grid-cols-2 gap-3 mb-8">
         <StatCard
@@ -132,11 +155,11 @@ export default function ScoreDisplay() {
           New Session
         </button>
         <button
-          onClick={() => setScreen("landing")}
+          onClick={() => (isReview && onBack ? onBack() : setScreen("landing"))}
           className="flex-1 flex items-center justify-center gap-2 bg-emerald-600 hover:bg-emerald-500 text-white font-semibold rounded-xl py-3 transition-colors"
         >
           <TrendingUp size={16} />
-          Change Source
+          {isReview ? "Back to Home" : "Change Source"}
         </button>
       </div>
     </div>

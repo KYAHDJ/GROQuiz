@@ -27,9 +27,12 @@ export async function POST(req: Request): Promise<NextResponse> {
     const buffer = Buffer.from(arrayBuffer);
     const { text, numpages } = await parsePdfBuffer(buffer);
 
-    if (!text || text.trim().length < 50) {
+    if (!text || text.trim().length < 20) {
       return NextResponse.json(
-        { error: "Could not extract enough text from this PDF. Try a text-heavy PDF." } satisfies ParsePdfResponse,
+        {
+          error:
+            "We couldn't find any readable text in this PDF. If it's a scanned document (images), upload a text PDF or paste the text below instead.",
+        } satisfies ParsePdfResponse,
         { status: 422 }
       );
     }

@@ -1,242 +1,281 @@
 "use client";
 
-import { useCallback, useRef, useState } from "react";
-import {
-  Upload,
-  FileText,
-  Sparkles,
-  AlertCircle,
-  Loader2,
-  BookOpen,
-  ArrowRight,
-} from "lucide-react";
+import { useRef, useState } from "react";
+import { Upload, FileText, Loader2, History, ChevronRight } from "lucide-react";
 import { useQuiz } from "@/context/QuizContext";
-import { BATCH_SIZE } from "@/context/QuizContext";
-import type { Difficulty } from "@/lib/types";
+import type { FlashcardQuestion, HistoryRecord } from "@/lib/types";
 
-export default function PdfUpload() {
-  const { state, setSource, loadQuestions } = useQuiz();
-  const [dragOver, setDragOver] = useState(false);
-  const [error, setError] = useState("");
-  const [loading, setLoading] = useState(false);
-  const [uploadMode, setUploadMode] = useState<"pdf" | "text" | null>(null);
-  const [textInput, setTextInput] = useState("");
-  const [topicsInput, setTopicsInput] = useState("");
-  const inputRef = useRef<HTMLInputElement>(null);
+export default function PdfUpload({
+  onReview,
+}: {
+  onReview?: (record: HistoryRecord) => void;
+}) {
+  const { setSource, loadQuestions, setScreen, state, hasSavedGame, resumeGame, history } =
+    useQuiz();
+  const fileRef = useRef<HTMLInputElement>(null);
+  const [fileName, setFileName] = useState<string | null>(null);
+  const [progress, setProgress] = useState<number | null>(null);
+  const [progressLabel, setProgressLabel] = useState("");
+  const [topics, setTopics] = useState("");
+  const [error, setError] = useState<string | null>(null);
 
-  const processFile = useCallback(async (file: File) => {
-    setError("");
-    setLoading(true);
+  const clearError = () => setError(null);
 
-    const formData = new FormData();
-    formData.append("file", file);
+  const handleFile = (file: File) => {
+    setError(null);
 
+    if (!file.name.toLowerCase().endsWith(".pdf")) {
+      setError("Please choose a PDF file.");
+      return;
+    }
+    if (file.size > 10 * 1024 * 1024) {
+      setError("That PDF is too large (max 10 MB).");
+      return;
+    }
+
+    setFileName(file.name);
+    parsePdf(file);
+  };
+
+  const parsePdf = async (file: File) => {
     try {
-      const res = await fetch("/api/parse-pdf", { method: "POST", body: formData });
-      const data = await res.json();
-      if (!res.ok) {
-        setError(data.error ?? "Failed to parse PDF");
-        setLoading(false);
+      setProgressLabel("Reading PDF…");
+      setProgress(10);
+
+      const parseBody = new FormData();
+      parseBody.append("file", file);
+      const parseRes = await fetch("/api/parse-pdf", { method: "POST", body: parseBody });
+      const parseData = await parseRes.json();
+
+      if (!parseRes.ok) {
+        setProgress(null);
+        setError(parseData.error ?? "We couldn't read that PDF.");
         return;
       }
-      setSource(data.text, topicsInput);
-      await fetchQuestions(data.text, topicsInput);
-    } catch {
-      setError("Could not process the PDF. Please try another file.");
-      setLoading(false);
-    }
-  }, [topicsInput, setSource]);
 
-  const fetchQuestions = useCallback(
-    async (text: string, topics: string) => {
-      setLoading(true);
-      const tier = state.stats.tier as unknown as Difficulty;
-      try {
-        const res = await fetch("/api/generate-questions", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            text,
-            topics,
-            count: BATCH_SIZE,
-            difficulty: tier,
-          }),
-        });
-        const data = await res.json();
-        if (data.questions && data.questions.length > 0) {
-          loadQuestions(data.questions);
-        } else {
-          setError("No questions could be generated. Try different content.");
-          setLoading(false);
-        }
-      } catch {
-        setError("Failed to generate questions. Check your connection.");
-        setLoading(false);
+      setProgressLabel("Generating questions…");
+      setProgress(60);
+
+      const genBody = new FormData();
+      genBody.append("text", parseData.text);
+      genBody.append("topics", topics);
+      const genRes = await fetch("/api/generate-questions", { method: "POST", body: genBody });
+      const genData = await genRes.json();
+
+      if (!genRes.ok) {
+        setProgress(null);
+        setError(genData.error ?? "We couldn't generate questions for this material.");
+        return;
       }
-    },
-    [state.stats.tier, loadQuestions]
-  );
 
-  const handleTextSubmit = useCallback(async () => {
-    if (!textInput.trim()) return;
-    setSource(textInput, topicsInput);
-    await fetchQuestions(textInput, topicsInput);
-  }, [textInput, topicsInput, setSource, fetchQuestions]);
+      setProgress(100);
 
-  const onDrop = useCallback(
-    (e: React.DragEvent) => {
-      e.preventDefault();
-      setDragOver(false);
-      const file = e.dataTransfer.files[0];
-      if (file?.name.toLowerCase().endsWith(".pdf")) processFile(file);
-      else setError("Please drop a PDF file");
-    },
-    [processFile]
-  );
+      const questions: FlashcardQuestion[] = Array.isArray(genData.questions)
+        ? genData.questions
+        : [];
+      if (questions.length === 0) {
+        setProgress(null);
+        setError("No questions could be generated from this material. Try a longer text.");
+        return;
+      }
+
+      setSource(parseData.text, topics);
+      setTimeout(() => {
+        loadQuestions(questions);
+        setScreen("quiz");
+        setProgress(null);
+        setFileName(null);
+      }, 400);
+    } catch {
+      setProgress(null);
+      setError("Something went wrong while uploading. Please try again.");
+    }
+  };
+
+  const handleGenerate = async () => {
+    if (topics.trim().length < 3) {
+      setError("Enter a topic for your material to continue.");
+      return;
+    }
+    setError(null);
+    setFileName("Typed material");
+
+    try {
+      setProgressLabel("Generating questions…");
+      setProgress(50);
+
+      const genBody = new FormData();
+      genBody.append("topics", topics);
+      genBody.append("text", "");
+      const genRes = await fetch("/api/generate-questions", { method: "POST", body: genBody });
+      const genData = await genRes.json();
+
+      if (!genRes.ok) {
+        setProgress(null);
+        setError(genData.error ?? "We couldn't generate questions for that topic.");
+        return;
+      }
+
+      const questions: FlashcardQuestion[] = Array.isArray(genData.questions)
+        ? genData.questions
+        : [];
+      if (questions.length === 0) {
+        setProgress(null);
+        setError("No questions could be generated for this topic. Try a more specific one.");
+        return;
+      }
+
+      setProgress(100);
+      setSource("", topics);
+      setTimeout(() => {
+        loadQuestions(questions);
+        setScreen("quiz");
+        setProgress(null);
+        setFileName(null);
+      }, 400);
+    } catch {
+      setProgress(null);
+      setError("Something went wrong while generating questions.");
+    }
+  };
+
+  const active = progress !== null;
 
   return (
-    <div className="flex flex-col items-center justify-center min-h-dvh px-4 py-8">
-      <div className="text-center mb-10 max-w-lg">
-        <div className="inline-flex items-center gap-2 bg-emerald-500/10 border border-emerald-500/20 rounded-full px-4 py-1.5 mb-5 text-sm text-emerald-400">
-          <Sparkles size={14} className="animate-pulse" />
-          Powered by Groq + GPT-OSS
-        </div>
-        <h1 className="text-4xl sm:text-5xl font-extrabold tracking-tight mb-3 bg-gradient-to-r from-emerald-400 via-teal-300 to-cyan-400 bg-clip-text text-transparent">
-          GROQuiz
-        </h1>
-        <p className="text-slate-400 text-base sm:text-lg leading-relaxed">
-          Upload a PDF or paste text. Get AI-generated adaptive flashcards with
-          progressive hints and power-ups.
-        </p>
-      </div>
-
-      {state.screen === "loading" && loading ? (
-        <div className="flex flex-col items-center gap-4 py-16">
-          <Loader2 size={40} className="text-emerald-400 animate-spin" />
-          <p className="text-slate-300 text-lg">Generating questions…</p>
-        </div>
-      ) : !uploadMode ? (
-        <div className="flex flex-col sm:flex-row gap-4 w-full max-w-md">
+    <div className="w-full max-w-2xl mx-auto space-y-4">
+      {hasSavedGame && state.screen === "landing" && (
+        <div className="bg-cyan-500/10 border border-cyan-500/25 rounded-2xl px-4 py-3 flex items-center justify-between gap-3">
+          <p className="text-sm text-cyan-200">
+            You have an unfinished quiz on{" "}
+            <span className="font-semibold">{state.currentTopics || "your material"}</span>.
+          </p>
           <button
-            onClick={() => setUploadMode("pdf")}
-            className="flex-1 flex flex-col items-center gap-3 bg-slate-800/80 hover:bg-slate-800 border border-slate-700 hover:border-emerald-500/50 rounded-2xl p-6 transition-all cursor-pointer group"
+            type="button"
+            onClick={resumeGame}
+            className="shrink-0 bg-cyan-600 hover:bg-cyan-500 text-white text-sm font-semibold rounded-xl px-4 py-2 transition-colors"
           >
-            <FileText
-              size={32}
-              className="text-slate-400 group-hover:text-emerald-400 transition-colors"
-            />
-            <span className="font-semibold text-slate-200">Upload PDF</span>
-            <span className="text-xs text-slate-500">
-              Extract text & build flashcards
-            </span>
-          </button>
-          <button
-            onClick={() => setUploadMode("text")}
-            className="flex-1 flex flex-col items-center gap-3 bg-slate-800/80 hover:bg-slate-800 border border-slate-700 hover:border-cyan-500/50 rounded-2xl p-6 transition-all cursor-pointer group"
-          >
-            <BookOpen
-              size={32}
-              className="text-slate-400 group-hover:text-cyan-400 transition-colors"
-            />
-            <span className="font-semibold text-slate-200">Paste Text</span>
-            <span className="text-xs text-slate-500">
-              Enter a topic or raw notes
-            </span>
-          </button>
-        </div>
-      ) : uploadMode === "pdf" ? (
-        <div className="w-full max-w-lg">
-          <button
-            onClick={() => { setUploadMode(null); setError(""); }}
-            className="text-sm text-slate-500 hover:text-slate-300 mb-4 transition-colors"
-          >
-            ← back
-          </button>
-          <div
-            onDragOver={(e) => { e.preventDefault(); setDragOver(true); }}
-            onDragLeave={() => setDragOver(false)}
-            onDrop={onDrop}
-            onClick={() => inputRef.current?.click()}
-            className={`border-2 border-dashed rounded-2xl p-10 text-center cursor-pointer transition-all ${
-              dragOver
-                ? "border-emerald-400 bg-emerald-500/10"
-                : "border-slate-700 hover:border-slate-500 bg-slate-800/50"
-            }`}
-          >
-            <Upload
-              size={40}
-              className={`mx-auto mb-4 ${dragOver ? "text-emerald-400" : "text-slate-500"}`}
-            />
-            <p className="text-slate-300 font-medium mb-1">
-              Drop your PDF here or tap to browse
-            </p>
-            <p className="text-xs text-slate-500">Max ~4MB</p>
-            <input
-              ref={inputRef}
-              type="file"
-              accept=".pdf"
-              className="hidden"
-              onChange={(e) => {
-                const f = e.target.files?.[0];
-                if (f) processFile(f);
-              }}
-            />
-          </div>
-          <div className="mt-4">
-            <label className="block text-sm text-slate-400 mb-1">
-              Optional: topics / focus areas
-            </label>
-            <input
-              type="text"
-              value={topicsInput}
-              onChange={(e) => setTopicsInput(e.target.value)}
-              placeholder="e.g. cellular respiration, mitochondria"
-              className="w-full bg-slate-800/80 border border-slate-700 rounded-xl px-4 py-2.5 text-sm text-slate-200 placeholder:text-slate-600 focus:outline-none focus:border-emerald-500/60 transition-colors"
-            />
-          </div>
-        </div>
-      ) : (
-        <div className="w-full max-w-lg">
-          <button
-            onClick={() => { setUploadMode(null); setError(""); }}
-            className="text-sm text-slate-500 hover:text-slate-300 mb-4 transition-colors"
-          >
-            ← back
-          </button>
-          <textarea
-            value={textInput}
-            onChange={(e) => setTextInput(e.target.value)}
-            placeholder="Paste your study material here…"
-            rows={8}
-            className="w-full bg-slate-800/80 border border-slate-700 rounded-xl px-4 py-3 text-sm text-slate-200 placeholder:text-slate-600 focus:outline-none focus:border-emerald-500/60 resize-none transition-colors"
-          />
-          <div className="mt-3">
-            <label className="block text-sm text-slate-400 mb-1">
-              Optional: focus topics
-            </label>
-            <input
-              type="text"
-              value={topicsInput}
-              onChange={(e) => setTopicsInput(e.target.value)}
-              placeholder="e.g. osmosis, cell membranes"
-              className="w-full bg-slate-800/80 border border-slate-700 rounded-xl px-4 py-2.5 text-sm text-slate-200 placeholder:text-slate-600 focus:outline-none focus:border-emerald-500/60 transition-colors"
-            />
-          </div>
-          <button
-            onClick={handleTextSubmit}
-            disabled={!textInput.trim()}
-            className="mt-4 w-full flex items-center justify-center gap-2 bg-emerald-600 hover:bg-emerald-500 disabled:bg-slate-700 disabled:text-slate-500 text-white font-semibold rounded-xl py-3 transition-colors"
-          >
-            Generate Flashcards
-            <ArrowRight size={18} />
+            Resume
           </button>
         </div>
       )}
 
       {error && (
-        <div className="mt-6 flex items-start gap-2 bg-red-500/10 border border-red-500/20 rounded-xl px-4 py-3 text-sm text-red-300 max-w-lg w-full">
-          <AlertCircle size={16} className="shrink-0 mt-0.5" />
-          {error}
+        <div className="bg-red-500/10 border border-red-500/30 rounded-2xl px-4 py-3 text-sm text-red-300 flex items-start gap-2">
+          <span className="flex-1">{error}</span>
+          <button
+            type="button"
+            onClick={clearError}
+            className="text-red-400 hover:text-red-200 font-medium text-xs"
+          >
+            Dismiss
+          </button>
+        </div>
+      )}
+
+      <div
+        onDragOver={(e) => e.preventDefault()}
+        onDrop={(e) => {
+          e.preventDefault();
+          const f = e.dataTransfer.files?.[0];
+          if (f) handleFile(f);
+        }}
+        onClick={() => !active && fileRef.current?.click()}
+        className="cursor-pointer border-2 border-dashed border-slate-700 hover:border-cyan-500/60 hover:bg-slate-800/40 rounded-2xl p-8 sm:p-12 flex flex-col items-center justify-center gap-3 transition-all"
+      >
+        <input
+          ref={fileRef}
+          type="file"
+          accept="application/pdf"
+          className="hidden"
+          onChange={(e) => {
+            const f = e.target.files?.[0];
+            if (f) handleFile(f);
+          }}
+        />
+
+        {progress !== null ? (
+          <>
+            <Loader2 size={28} className="text-cyan-400 animate-spin" />
+            {fileName && (
+              <p className="text-sm text-slate-300 font-medium truncate max-w-full flex items-center gap-2">
+                <FileText size={14} className="shrink-0 text-cyan-400" />
+                <span className="truncate">{fileName}</span>
+              </p>
+            )}
+            <p className="text-xs text-cyan-300">{progressLabel}</p>
+            <div className="w-full max-w-xs h-1.5 bg-slate-800 rounded-full overflow-hidden">
+              <div
+                className="h-full bg-cyan-500 rounded-full transition-all duration-300"
+                style={{ width: `${progress}%` }}
+              />
+            </div>
+          </>
+        ) : (
+          <>
+            <Upload size={32} className="text-slate-500" />
+            <p className="text-sm sm:text-base text-slate-300 font-medium">
+              Upload a PDF to generate questions
+            </p>
+            <p className="text-xs text-slate-500 text-center">
+              Text is extracted on the fly — your document is never stored.
+              <br />
+              Scanned/image PDFs aren't supported — paste the text below instead.
+            </p>
+          </>
+        )}
+      </div>
+
+      <div className="bg-slate-800/40 border border-slate-700/60 rounded-2xl p-4 space-y-3">
+        <label htmlFor="topics" className="block text-xs font-medium text-slate-400">
+          What is this material about?
+        </label>
+        <input
+          id="topics"
+          type="text"
+          value={topics}
+          onChange={(e) => setTopics(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === "Enter") handleGenerate();
+          }}
+          placeholder="e.g. Photosynthesis for high school biology"
+          className="w-full bg-slate-900/60 border border-slate-700 rounded-xl px-4 py-2.5 text-sm text-slate-200 placeholder-slate-600 focus:outline-none focus:border-cyan-500/50"
+        />
+        <button
+          type="button"
+          onClick={handleGenerate}
+          disabled={active}
+          className="w-full bg-slate-700 hover:bg-slate-600 disabled:opacity-50 text-slate-200 text-sm font-medium rounded-xl py-2.5 transition-colors"
+        >
+          Generate questions about this topic
+        </button>
+      </div>
+
+      {history.length > 0 && (
+        <div className="bg-slate-800/40 border border-slate-700/60 rounded-2xl p-4 space-y-2">
+          <p className="text-xs font-medium text-slate-400 flex items-center gap-1.5">
+            <History size={12} />
+            Past sessions
+          </p>
+          {history.slice(0, 5).map((r) => (
+            <button
+              key={r.id}
+              type="button"
+              onClick={() => onReview?.(r)}
+              className="w-full flex items-center justify-between gap-2 bg-slate-900/50 hover:bg-slate-800/70 border border-slate-700/50 rounded-xl px-3 py-2.5 text-left transition-colors group"
+            >
+              <span className="min-w-0">
+                <span className="block text-sm text-slate-200 truncate">{r.topic}</span>
+                <span className="block text-[11px] text-slate-500">
+                  {new Date(r.date).toLocaleDateString()} · {r.stats.correct}/{r.stats.answered} correct ·{" "}
+                  {r.points} pts
+                </span>
+              </span>
+              <ChevronRight
+                size={15}
+                className="shrink-0 text-slate-600 group-hover:text-cyan-400 transition-colors"
+              />
+            </button>
+          ))}
         </div>
       )}
     </div>

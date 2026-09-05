@@ -55,3 +55,25 @@ export interface QuestionResult {
   pointsEarned: number;
   hintsUsed: number;
 }
+
+export interface HistoryRecord {
+  id: string;
+  topic: string;
+  date: number;
+  stats: GameStats;
+  results: QuestionResult[];
+  questions: FlashcardQuestion[];
+  points: number;
+}
+
+export interface SavedGame {
+  questions: FlashcardQuestion[];
+  currentIndex: number;
+  stats: GameStats;
+  inventory: PowerupInventory;
+  results: QuestionResult[];
+  currentText: string;
+  currentTopics: string;
+  screen: "quiz" | "results";
+  savedAt: number;
+}

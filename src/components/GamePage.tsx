@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { ShoppingBag } from "lucide-react";
 import { useQuiz } from "@/context/QuizContext";
+import type { HistoryRecord } from "@/lib/types";
 import PdfUpload from "./PdfUpload";
 import PowerupBar from "./PowerupBar";
 import HintTimer from "./HintTimer";
@@ -13,9 +14,22 @@ import ScoreDisplay from "./ScoreDisplay";
 export default function GamePage() {
   const { state } = useQuiz();
   const [shopOpen, setShopOpen] = useState(false);
+  const [review, setReview] = useState<HistoryRecord | null>(null);
 
-  if (state.screen === "landing" || state.screen === "loading") {
-    return <PdfUpload />;
+  if (state.screen === "landing") {
+    if (review) {
+      return <ScoreDisplay record={review} onBack={() => setReview(null)} />;
+    }
+    return <PdfUpload onReview={(r) => setReview(r)} />;
+  }
+
+  if (state.screen === "loading") {
+    return (
+      <div className="min-h-dvh flex flex-col items-center justify-center gap-4 px-4">
+        <div className="w-10 h-10 border-4 border-cyan-500 border-t-transparent rounded-full animate-spin" />
+        <p className="text-sm text-slate-400">Generating your quiz…</p>
+      </div>
+    );
   }
 
   if (state.screen === "results") {

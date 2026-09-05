@@ -1,19 +1,33 @@
 "use client";
 
-import { createContext, useContext, useMemo, useReducer, type ReactNode } from "react";
+import {
+  createContext,
+  useContext,
+  useEffect,
+  useMemo,
+  useReducer,
+  useRef,
+  useState,
+  type ReactNode,
+} from "react";
 import type {
   Difficulty,
   FlashcardQuestion,
   GameStats,
   HintStage,
+  HistoryRecord,
   PowerupInventory,
   QuestionResult,
+  SavedGame,
 } from "@/lib/types";
 
-type Screen = "landing" | "loading" | "quiz" | "results";
+export type Screen = "landing" | "loading" | "quiz" | "results";
 
 export const BASE_POINTS = 100;
 export const BATCH_SIZE = 5;
+
+const SAVE_KEY = "groquiz:save:v1";
+const HISTORY_KEY = "groquiz:history:v1";
 
 interface QuizState {
   screen: Screen;
@@ -32,11 +46,11 @@ interface QuizState {
   currentText: string;
   currentTopics: string;
   displayingAnswer: boolean;
+  sessionId: string;
 }
 
 type QuizAction =
   | { type: "SET_SOURCE"; text: string; topics: string }
-  | { type: "SET_LOADING" }
   | { type: "LOAD_QUESTIONS"; questions: FlashcardQuestion[] }
   | { type: "SET_SCREEN"; screen: Screen }
   | { type: "START_TIMER" }
@@ -47,8 +61,10 @@ type QuizAction =
   | { type: "SELECT_ANSWER"; index: number }
   | { type: "CONFIRM_ANSWER" }
   | { type: "NEXT_QUESTION" }
-  | { type: "RESET_GAME" }
-  | { type: "EDIT_FLIP"; flipped: boolean };
+  | { type: "RESET_GAME" };
+
+const freshId = (prefix: string) =>
+  `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
 
 const initialState: QuizState = {
   screen: "landing",
@@ -67,10 +83,74 @@ const initialState: QuizState = {
   currentText: "",
   currentTopics: "",
   displayingAnswer: false,
+  sessionId: "",
 };
 
-function activeHints(hintStage: HintStage): number {
-  return hintStage;
+function loadSave(): QuizState {
+  if (typeof window === "undefined") return initialState;
+  try {
+    const raw = localStorage.getItem(SAVE_KEY);
+    if (!raw) return initialState;
+    const saved = JSON.parse(raw) as SavedGame;
+    if (!Array.isArray(saved.questions) || saved.questions.length === 0) {
+      return initialState;
+    }
+    return {
+      ...initialState,
+      questions: saved.questions,
+      currentIndex: saved.currentIndex ?? 0,
+      stats: saved.stats ?? initialState.stats,
+      inventory: saved.inventory ?? initialState.inventory,
+      results: saved.results ?? [],
+      currentText: saved.currentText ?? "",
+      currentTopics: saved.currentTopics ?? "",
+      screen: saved.screen === "results" ? "results" : "quiz",
+    };
+  } catch {
+    return initialState;
+  }
+}
+
+function loadHistory(): HistoryRecord[] {
+  if (typeof window === "undefined") return [];
+  try {
+    const raw = localStorage.getItem(HISTORY_KEY);
+    return raw ? (JSON.parse(raw) as HistoryRecord[]) : [];
+  } catch {
+    return [];
+  }
+}
+
+function persistSave(state: QuizState): void {
+  if (typeof window === "undefined") return;
+  if (state.screen === "landing" || state.questions.length === 0) {
+    localStorage.removeItem(SAVE_KEY);
+    return;
+  }
+  const saved: SavedGame = {
+    questions: state.questions,
+    currentIndex: state.currentIndex,
+    stats: state.stats,
+    inventory: state.inventory,
+    results: state.results,
+    currentText: state.currentText,
+    currentTopics: state.currentTopics,
+    screen: state.screen === "results" ? "results" : "quiz",
+    savedAt: Date.now(),
+  };
+  localStorage.setItem(SAVE_KEY, JSON.stringify(saved));
+}
+
+function persistHistory(record: HistoryRecord): HistoryRecord[] {
+  if (typeof window === "undefined") return [record];
+  try {
+    const existing = loadHistory();
+    const next = [record, ...existing.filter((r) => r.id !== record.id)].slice(0, 20);
+    localStorage.setItem(HISTORY_KEY, JSON.stringify(next));
+    return next;
+  } catch {
+    return [record];
+  }
 }
 
 function pointsForAnswer(result: {
@@ -86,7 +166,7 @@ function pointsForAnswer(result: {
 
   const fast = result.elapsed < 10;
   const speedBonus = fast ? 100 : 0;
-  const hints = activeHints(result.hintStage) + (result.fiftyFiftyUsed ? 1 : 0);
+  const hints = result.hintStage + (result.fiftyFiftyUsed ? 1 : 0);
   const hintPenalty = hints * 0.25;
 
   let points = Math.round((100 + speedBonus) * Math.max(0, 1 - hintPenalty));
@@ -104,9 +184,6 @@ function reduce(state: QuizState, action: QuizAction): QuizState {
     case "SET_SOURCE":
       return { ...state, currentText: action.text, currentTopics: action.topics, screen: "loading" };
 
-    case "SET_LOADING":
-      return { ...state, screen: "loading" };
-
     case "LOAD_QUESTIONS":
       return {
         ...state,
@@ -121,6 +198,7 @@ function reduce(state: QuizState, action: QuizAction): QuizState {
         fiftyFiftyUsed: false,
         screen: "quiz",
         results: [],
+        sessionId: freshId("sess"),
       };
 
     case "SET_SCREEN":
@@ -132,8 +210,7 @@ function reduce(state: QuizState, action: QuizAction): QuizState {
     case "TICK": {
       if (state.answered || state.timerPaused) return state;
       const elapsed = state.elapsed + 1;
-      const hintStage =
-        elapsed >= 30 ? 3 : elapsed >= 20 ? 2 : elapsed >= 10 ? 1 : 0;
+      const hintStage = elapsed >= 30 ? 3 : elapsed >= 20 ? 2 : elapsed >= 10 ? 1 : 0;
       return { ...state, elapsed, hintStage };
     }
 
@@ -223,9 +300,6 @@ function reduce(state: QuizState, action: QuizAction): QuizState {
         inventory: state.inventory,
       };
 
-    case "EDIT_FLIP":
-      return { ...state, isFlipped: action.flipped };
-
     default:
       return state;
   }
@@ -234,7 +308,6 @@ function reduce(state: QuizState, action: QuizAction): QuizState {
 interface QuizContextValue {
   state: QuizState;
   setSource: (text: string, topics: string) => void;
-  setLoading: () => void;
   loadQuestions: (questions: FlashcardQuestion[]) => void;
   setScreen: (screen: Screen) => void;
   startTimer: () => void;
@@ -246,20 +319,56 @@ interface QuizContextValue {
   confirmAnswer: () => void;
   nextQuestion: () => void;
   resetGame: () => void;
+  resumeGame: () => void;
   currentQuestion: FlashcardQuestion | null;
+  hasSavedGame: boolean;
+  history: HistoryRecord[];
+  clearHistory: () => void;
 }
 
 const QuizContext = createContext<QuizContextValue | null>(null);
 
 export function QuizProvider({ children }: { children: ReactNode }) {
-  const [state, dispatch] = useReducer(reduce, initialState);
+  const [state, dispatch] = useReducer(reduce, initialState, loadSave);
+  const [hasSavedGame, setHasSavedGame] = useState(false);
+  const [history, setHistory] = useState<HistoryRecord[]>([]);
+  const recordedSessionRef = useRef<string | null>(null);
+
+  useEffect(() => {
+    setHasSavedGame(state.screen !== "landing" && state.questions.length > 0);
+    persistSave(state);
+  }, [state]);
+
+  useEffect(() => {
+    setHistory(loadHistory());
+  }, []);
+
+  useEffect(() => {
+    if (
+      state.screen === "results" &&
+      state.results.length > 0 &&
+      state.sessionId &&
+      recordedSessionRef.current !== state.sessionId
+    ) {
+      recordedSessionRef.current = state.sessionId;
+      const records = persistHistory({
+        id: state.sessionId,
+        topic: state.currentTopics || "Imported material",
+        date: Date.now(),
+        stats: state.stats,
+        results: state.results,
+        questions: state.questions,
+        points: state.results.reduce((a, r) => a + r.pointsEarned, 0),
+      });
+      setHistory(records);
+    }
+  }, [state.screen, state.sessionId, state.results, state.stats, state.questions, state.currentTopics]);
 
   const value = useMemo<QuizContextValue>(() => {
     const currentQuestion = state.questions[state.currentIndex] ?? null;
     return {
       state,
       setSource: (text, topics) => dispatch({ type: "SET_SOURCE", text, topics }),
-      setLoading: () => dispatch({ type: "SET_LOADING" }),
       loadQuestions: (questions) => dispatch({ type: "LOAD_QUESTIONS", questions }),
       setScreen: (screen) => dispatch({ type: "SET_SCREEN", screen }),
       startTimer: () => dispatch({ type: "START_TIMER" }),
@@ -271,9 +380,21 @@ export function QuizProvider({ children }: { children: ReactNode }) {
       confirmAnswer: () => dispatch({ type: "CONFIRM_ANSWER" }),
       nextQuestion: () => dispatch({ type: "NEXT_QUESTION" }),
       resetGame: () => dispatch({ type: "RESET_GAME" }),
+      resumeGame: () => {
+        const save = loadSave();
+        if (save.questions.length > 0) {
+          dispatch({ type: "SET_SCREEN", screen: save.screen });
+        }
+      },
       currentQuestion,
+      hasSavedGame,
+      history,
+      clearHistory: () => {
+        localStorage.removeItem(HISTORY_KEY);
+        setHistory([]);
+      },
     };
-  }, [state]);
+  }, [state, hasSavedGame, history]);
 
   return <QuizContext.Provider value={value}>{children}</QuizContext.Provider>;
 }

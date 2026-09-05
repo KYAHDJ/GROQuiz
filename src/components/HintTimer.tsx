@@ -19,7 +19,7 @@ export default function HintTimer() {
     };
   }, [answered, timerPaused, tick]);
 
-  const pct = Math.min((elapsed / 45) * 100, 100);
+  const pct = Math.min((elapsed / 60) * 100, 100);
   const circumference = 2 * Math.PI * 28;
   const offset = circumference - (pct / 100) * circumference;
 
@@ -27,6 +27,14 @@ export default function HintTimer() {
   if (elapsed >= 30) colorClass = "stroke-red-500";
   else if (elapsed >= 20) colorClass = "stroke-amber-500";
   else if (elapsed >= 10) colorClass = "stroke-yellow-400";
+
+  const urgency =
+    elapsed >= 50 ? "Time's up — pick your best guess!"
+    : elapsed >= 40 ? "Hurry — every second counts!"
+    : elapsed >= 30 ? "Answer now to avoid a score penalty!"
+    : elapsed >= 20 ? "Hint active!"
+    : elapsed >= 10 ? "Keywords highlighted!"
+    : "";
 
   return (
     <div className="flex flex-col items-center gap-1">
@@ -69,6 +77,15 @@ export default function HintTimer() {
           />
         ))}
       </div>
+      {urgency && (
+        <p
+          className={`text-[10px] font-medium text-center max-w-[80px] leading-tight ${
+            elapsed >= 30 ? "text-red-400" : elapsed >= 20 ? "text-amber-400" : "text-yellow-400"
+          }`}
+        >
+          {urgency}
+        </p>
+      )}
     </div>
   );
 }
