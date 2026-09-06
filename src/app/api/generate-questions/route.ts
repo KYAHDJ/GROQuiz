@@ -13,53 +13,6 @@ const READABILITY_STYLES = [
   "apply-it-to-real-life angle",
 ];
 
-const DIFFICULTY_LABELS: Record<number, string> = {
-  1: "beginner foundational",
-  2: "easy introductory",
-  3: "intermediate",
-  4: "advanced",
-  5: "expert challenging",
-};
-
-function fallbackQuestions(text: string, difficulty: Difficulty, count: number): FlashcardQuestion[] {
-  const sentences = text
-    .split(/[.!?\n]+/)
-    .map((s) => s.trim())
-    .filter((s) => s.length > 20 && s.length < 220);
-
-  const questions: FlashcardQuestion[] = [];
-  const source = sentences.length > 0 ? sentences : ["The learning material"];
-
-  for (let i = 0; i < count; i++) {
-    const sentence = source[i % source.length];
-    const fact = sentence.length > 120 ? sentence.slice(0, 120).trimEnd() + "…" : sentence;
-    const keyword =
-      fact
-        .split(/\s+/)
-        .filter((w) => w.length > 4)
-        .sort((a, b) => b.length - a.length)[0] ?? "concept";
-
-    const correct = keyword;
-    const wrong1 = "An unrelated idea";
-    const wrong2 = `The opposite of ${keyword}`;
-    const wrong3 = "A vague, incorrect guess";
-
-    questions.push({
-      id: `fallback-${i}-${Date.now()}`,
-      question: `According to the material, which statement best matches: "${fact}"`,
-      options: [correct, wrong1, wrong2, wrong3].sort(() => Math.random() - 0.5),
-      correctIndex: -1,
-      explanation: `Based on the source text: ${fact}`,
-      initialDifficulty: difficulty,
-    });
-
-    const correctText = questions[i].options.findIndex((o) => o === correct);
-    questions[i].correctIndex = correctText;
-  }
-
-  return questions;
-}
-
 function extractJson(raw: string): unknown[] {
   const parsed = parseJsonContent(raw);
   if (parsed && typeof parsed === "object") {
@@ -125,7 +78,6 @@ export async function POST(req: Request): Promise<NextResponse> {
 
   const difficulty = Math.max(1, Math.min(5, Number(body.difficulty) || 3)) as Difficulty;
   const count = Math.max(3, Math.min(10, Number(body.count) || 5));
-  const fallback = () => fallbackQuestions(text, difficulty, count);
 
   const topicsLine = body.topics?.trim()
     ? `Focus on these topics: ${body.topics.trim()}\n`
@@ -151,7 +103,7 @@ Source text:
 ${text.slice(0, 6000)}
 
 ${topicsLine}
-Requested difficulty: ${DIFFICULTY_LABELS[difficulty]} (1=beginner, 5=expert).
+Requested difficulty: ${difficulty} (1=beginner, 5=expert).
 READABILITY RULE — the wording itself must match this level exactly:
 ${DIFFICULTY_READABILITY[difficulty]}
 
@@ -180,13 +132,6 @@ CRITICAL: Respond with ONLY one valid JSON object containing a single key "quest
 Make the questions meaningful, test actual understanding, include plausible distractors, and randomize the position of the correct answer.`;
 
   try {
-    if (!process.env.GROQ_API_KEY) {
-      return NextResponse.json(
-        { questions: fallback(), fallback: true } satisfies GenerateQuestionsResponse,
-        { status: 200 }
-      );
-    }
-
     const raw = await chatWithFallback({
       model: DEFAULT_MODEL,
       messages: [
@@ -206,8 +151,8 @@ Make the questions meaningful, test actual understanding, include plausible dist
 
     if (questions.length === 0) {
       return NextResponse.json(
-        { questions: fallback(), fallback: true } satisfies GenerateQuestionsResponse,
-        { status: 200 }
+        { error: "Groq returned no usable questions. Please try again." },
+        { status: 503 }
       );
     }
 
@@ -215,8 +160,8 @@ Make the questions meaningful, test actual understanding, include plausible dist
   } catch (err) {
     console.error("generate-questions error:", err);
     return NextResponse.json(
-      { questions: fallback(), fallback: true } satisfies GenerateQuestionsResponse,
-      { status: 200 }
+      { error: "Groq couldn't generate questions right now. Try again in a moment." },
+      { status: 503 }
     );
   }
 }

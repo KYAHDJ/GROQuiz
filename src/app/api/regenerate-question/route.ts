@@ -34,33 +34,6 @@ const OPENERS = [
   "What would change if:",
 ];
 
-function fallbackQuestion(text: string, difficulty: Difficulty): FlashcardQuestion {
-  const sentences = text
-    .split(/[.!?\n]+/)
-    .map((s) => s.trim())
-    .filter((s) => s.length > 20 && s.length < 220);
-  const sentence = sentences[Math.floor(Math.random() * sentences.length)] ?? text.slice(0, 160);
-  const fact = sentence.length > 120 ? sentence.slice(0, 120).trimEnd() + "…" : sentence;
-  const keyword =
-    fact.split(/\s+/).filter((w) => w.length > 4).sort((a, b) => b.length - a.length)[0] ??
-    "concept";
-  const correct = keyword;
-  const options = [
-    correct,
-    "An unrelated idea",
-    `The opposite of ${keyword}`,
-    "A vague, incorrect guess",
-  ].sort(() => Math.random() - 0.5);
-  return {
-    id: `fallback-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
-    question: `According to the material, which statement best matches: "${fact}"`,
-    options,
-    correctIndex: options.findIndex((o) => o === correct),
-    explanation: `Based on the source text: ${fact}`,
-    initialDifficulty: difficulty,
-  };
-}
-
 function extractJson(raw: string): Record<string, unknown> {
   const parsed = parseJsonContent(raw);
   if (parsed && typeof parsed === "object") return parsed;
@@ -91,8 +64,6 @@ export async function POST(req: Request): Promise<NextResponse> {
   const avoid = Array.isArray(body.avoid)
     ? body.avoid.map((a) => String(a)).filter((a) => a.trim()).slice(0, 20)
     : [];
-
-  const fallback = () => fallbackQuestion(text, difficulty);
 
   const seed = Math.floor(Math.random() * 1_000_000);
   const angle = ANGLES[Math.floor(Math.random() * ANGLES.length)];
@@ -135,10 +106,6 @@ CRITICAL: Respond with ONLY a valid JSON object: {"question": {...}}. No markdow
 Randomize the position of the correct answer and use plausible distractors.`;
 
   try {
-    if (!process.env.GROQ_API_KEY) {
-      return NextResponse.json({ question: fallback() }, { status: 200 });
-    }
-
     const raw = await chatWithFallback({
       model: DEFAULT_MODEL,
       messages: [
@@ -156,7 +123,10 @@ Randomize the position of the correct answer and use plausible distractors.`;
     const parsed = extractJson(raw);
     const item = (parsed.question ?? null) as Record<string, unknown> | null;
     if (!item) {
-      return NextResponse.json({ question: fallback() }, { status: 200 });
+      return NextResponse.json(
+        { error: "Groq returned an empty question. It will retry automatically." },
+        { status: 503 }
+      );
     }
     const options = Array.isArray(item.options)
       ? (item.options as unknown[]).map((o) => String(o)).slice(0, 4)
@@ -164,7 +134,10 @@ Randomize the position of the correct answer and use plausible distractors.`;
     const questionText = String(item.question ?? "").trim();
 
     if (options.length < 2 || !questionText) {
-      return NextResponse.json({ question: fallback() }, { status: 200 });
+      return NextResponse.json(
+        { error: "Groq returned an incomplete question. It will retry automatically." },
+        { status: 503 }
+      );
     }
 
     const rawIndex = item.correctIndex as number | string | undefined;
@@ -191,6 +164,9 @@ Randomize the position of the correct answer and use plausible distractors.`;
     );
   } catch (err) {
     console.error("regenerate-question error:", err);
-    return NextResponse.json({ question: fallback() }, { status: 200 });
+    return NextResponse.json(
+      { error: "Groq couldn't adapt the question right now. It will retry automatically." },
+      { status: 503 }
+    );
   }
 }

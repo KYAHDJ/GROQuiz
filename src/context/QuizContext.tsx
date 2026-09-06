@@ -2,6 +2,7 @@
 
 import {
   createContext,
+  useCallback,
   useContext,
   useEffect,
   useMemo,
@@ -558,6 +559,8 @@ interface QuizContextValue {
   resetGame: () => void;
   resumeGame: () => void;
   adaptUpcoming: () => Promise<void>;
+  hintCache: Readonly<Record<string, string>>;
+  requestHint: (question: FlashcardQuestion, difficulty: number) => void;
   currentQuestion: FlashcardQuestion | null;
   hasSavedGame: boolean;
   history: HistoryRecord[];
@@ -574,6 +577,10 @@ export function QuizProvider({ children }: { children: ReactNode }) {
   const stateRef = useRef(state);
   stateRef.current = state;
   const adaptTokenRef = useRef(0);
+  const [hintCache, setHintCache] = useState<Record<string, string>>({});
+  const hintCacheRef = useRef<Record<string, string>>({});
+  hintCacheRef.current = hintCache;
+  const hintPendingRef = useRef<Set<string>>(new Set());
 
   useEffect(() => {
     setHasSavedGame(state.screen !== "landing" && state.questions.length > 0);
@@ -604,6 +611,64 @@ export function QuizProvider({ children }: { children: ReactNode }) {
       setHistory(records);
     }
   }, [state.screen, state.sessionId, state.results, state.stats, state.allQuestions, state.currentTopics]);
+
+  const requestHint = useCallback(
+    async (question: FlashcardQuestion, difficulty: number) => {
+      if (
+        hintCacheRef.current[question.id] ||
+        hintPendingRef.current.has(question.id)
+      ) {
+        return;
+      }
+      hintPendingRef.current.add(question.id);
+      try {
+        const s = stateRef.current;
+        const res = await fetch("/api/hint", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            question: question.question,
+            options: question.options,
+            correctIndex: question.correctIndex,
+            difficulty,
+            text: s.currentText.slice(0, 4000),
+          }),
+        });
+        if (!res.ok) throw new Error("hint failed");
+        const data = await res.json();
+        if (typeof data?.hint === "string" && data.hint.trim()) {
+          const hint = data.hint.trim();
+          setHintCache((prev) =>
+            prev[question.id] ? prev : { ...prev, [question.id]: hint }
+          );
+          return;
+        }
+        throw new Error("empty hint");
+      } catch {
+        setTimeout(() => {
+          hintPendingRef.current.delete(question.id);
+          const cur = stateRef.current;
+          if (
+            cur.screen === "quiz" &&
+            cur.questions.some((q) => q.id === question.id)
+          ) {
+            requestHint(question, cur.stats.tier);
+          }
+        }, 60_000);
+      }
+    },
+    []
+  );
+
+  useEffect(() => {
+    const s = stateRef.current;
+    if (s.screen !== "quiz" || s.questions.length === 0) return;
+    const answeredIds = new Set(s.results.map((r) => r.questionId));
+    for (const q of s.questions) {
+      if (answeredIds.has(q.id) || hintCacheRef.current[q.id]) continue;
+      requestHint(q, s.stats.tier);
+    }
+  }, [state.screen, state.currentIndex, state.questions, state.results, requestHint]);
 
   const value = useMemo<QuizContextValue>(() => {
     const currentQuestion = state.questions[state.currentIndex] ?? null;
@@ -675,6 +740,8 @@ export function QuizProvider({ children }: { children: ReactNode }) {
       },
       adaptUpcoming,
       currentQuestion,
+      hintCache,
+      requestHint,
       hasSavedGame,
       history,
       clearHistory: () => {
@@ -682,7 +749,7 @@ export function QuizProvider({ children }: { children: ReactNode }) {
         setHistory([]);
       },
     };
-  }, [state, hasSavedGame, history]);
+  }, [state, hasSavedGame, history, hintCache, requestHint]);
 
   return <QuizContext.Provider value={value}>{children}</QuizContext.Provider>;
 }

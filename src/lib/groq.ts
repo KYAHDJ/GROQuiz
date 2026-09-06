@@ -43,35 +43,56 @@ export interface ChatOptions {
   max_tokens?: number;
 }
 
+const COOLDOWN_MS = 60_000;
+const keyCooldowns = new Map<string, number>();
+
+const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
 /**
- * Runs a chat completion, trying each configured GROQ key in order.
- * If a key fails (rate limit, outage), the next key is used automatically.
+ * Runs a chat completion, switching to another GROQ key the moment one fails.
+ * - Keys that error are put on a 60s cooldown so we never hammer a dead key.
+ * - If every key is cooling down, waits a bit, then tries anyhow.
+ * - If a full pass fails, waits ~1 minute and tries the whole set once more.
+ * - Only throws after all of that — callers decide what to show the user.
  */
 export async function chatWithFallback(
   opts: ChatOptions
 ): Promise<string> {
-  const keys = apiKeys();
-  if (keys.length === 0) throw new Error("GROQ_API_KEY is not set");
+  const keys = apiKeys().filter((k) => !keyCooldowns.has(k) || keyCooldowns.get(k)! <= Date.now());
+  if (keys.length === 0) {
+    await sleep(COOLDOWN_MS);
+    keyCooldowns.clear();
+    if (apiKeys().length === 0) throw new Error("GROQ_API_KEY is not set");
+  }
+  const attempts = keys.length > 0 ? keys : apiKeys();
   let lastErr: unknown;
+  let pass = 0;
 
-  for (const key of keys) {
-    try {
-      let client = clientCache.get(key);
-      if (!client) {
-        client = new Groq({ apiKey: key });
-        clientCache.set(key, client);
+  while (pass < 2) {
+    for (const key of attempts) {
+      try {
+        let client = clientCache.get(key);
+        if (!client) {
+          client = new Groq({ apiKey: key });
+          clientCache.set(key, client);
+        }
+        const completion = await client.chat.completions.create(
+          opts as unknown as Parameters<typeof client.chat.completions.create>[0]
+        );
+        const anyCompletion = completion as {
+          choices?: Array<{ message?: { content?: string | null } }>;
+        };
+        const content = anyCompletion.choices?.[0]?.message?.content ?? "";
+        if (content) return content;
+        lastErr = new Error("empty completion");
+        keyCooldowns.set(key, Date.now() + COOLDOWN_MS);
+      } catch (err) {
+        lastErr = err;
+        keyCooldowns.set(key, Date.now() + COOLDOWN_MS);
       }
-      const completion = await client.chat.completions.create(
-        opts as unknown as Parameters<typeof client.chat.completions.create>[0]
-      );
-      const anyCompletion = completion as {
-        choices?: Array<{ message?: { content?: string | null } }>;
-      };
-      return anyCompletion.choices?.[0]?.message?.content ?? "";
-    } catch (err) {
-      lastErr = err;
-      if (keys.length === 1) throw err;
     }
+    pass += 1;
+    if (pass < 2) await sleep(Math.min(COOLDOWN_MS, 20_000));
   }
   throw lastErr;
 }

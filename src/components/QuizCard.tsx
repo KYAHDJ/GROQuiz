@@ -48,6 +48,8 @@ export default function QuizCard() {
     usePowerup,
     togglePause,
     currentQuestion,
+    hintCache,
+    requestHint,
   } = useQuiz();
 
   const { selected, answered, hintStage, timerPaused, inventory, mode, retryRound } =
@@ -63,8 +65,6 @@ export default function QuizCard() {
   const [shrunk, setShrunk] = useState<Set<number>>(new Set());
   const [powerupUsed, setPowerupUsed] = useState(false);
   const [freezeActive, setFreezeActive] = useState(false);
-  const [hint, setHint] = useState<string | null>(null);
-  const [hintFetched, setHintFetched] = useState(false);
   const shrinkPickedRef = useRef(false);
   const freezeQuestionIdRef = useRef<string | undefined>(undefined);
   const answeredRef = useRef(answered);
@@ -83,8 +83,6 @@ export default function QuizCard() {
 
   useEffect(() => {
     setClarification(null);
-    setHint(null);
-    setHintFetched(false);
     setFiftyActive(false);
     setShrunk(new Set());
     setPowerupUsed(false);
@@ -105,23 +103,10 @@ export default function QuizCard() {
   }, [hintStage, hintsOn, q, answered, fiftyActive, pickTwoWrong]);
 
   useEffect(() => {
-    if (hintsOn && showTip && !hintFetched && q) {
-      setHintFetched(true);
-      fetch("/api/hint", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          question: q.question,
-          options: q.options,
-          correctIndex: q.correctIndex,
-          difficulty: state.stats.tier,
-        }),
-      })
-        .then((r) => r.json())
-        .then((d) => setHint(d.hint ?? null))
-        .catch(() => setHint(null));
+    if (hintsOn && showTip && !hintCache[q?.id ?? ""] && q) {
+      requestHint(q, state.stats.tier);
     }
-  }, [showTip, hintFetched, q]);
+  }, [showTip, q, hintCache, requestHint, hintsOn, state.stats.tier]);
 
   if (!q) return null;
 
@@ -221,21 +206,20 @@ export default function QuizCard() {
               size={14}
               className="shrink-0 mt-0.5 text-amber-400 animate-pulse-hint"
             />
-            <span>{hint ?? "Loading hint…"}</span>
+            <span>{hintCache[q.id] ?? "Preparing hint…"}</span>
           </div>
         )}
 
         {fiftyActive && !answered && (
           <div className="bg-slate-700/30 border border-slate-600/30 rounded-xl px-4 py-2 text-xs text-slate-400 flex items-center gap-2">
             <Zap size={13} className="shrink-0 text-yellow-400" />
-            Smaller options are probably wrong — bigger one stands out. You decide.
+            Two options are out. One of the two remaining is correct — choose!
           </div>
         )}
 
         <div className="grid grid-cols-1 gap-2.5">
           {q.options.map((opt, i) => {
             const isShrunk = shrunk.has(i);
-            const isBoosted = fiftyActive && i === q.correctIndex;
             const isSelected = selected === i;
             const isCorrect = i === q.correctIndex;
 
@@ -254,10 +238,7 @@ export default function QuizCard() {
               }
             } else if (isShrunk) {
               optStyle = "bg-slate-900/40 border-slate-800 text-slate-500";
-              extraClasses = "opacity-50 scale-[0.92] py-1.5 text-xs";
-            } else if (isBoosted) {
-              optStyle = "bg-slate-800 border-slate-500 text-slate-100";
-              extraClasses = "scale-[1.1] font-semibold py-4";
+              extraClasses = "opacity-45 scale-[0.9] py-1.5 text-xs";
             } else if (isSelected) {
               optStyle = "bg-cyan-500/10 border-cyan-500/40 text-cyan-200";
             }
@@ -271,11 +252,7 @@ export default function QuizCard() {
                 className={`relative text-left border rounded-xl px-4 py-3 text-sm sm:text-base transition-all duration-300 disabled:cursor-not-allowed ${optStyle} ${extraClasses}`}
               >
                 <span
-                  className={`absolute left-3 top-1/2 -translate-y-1/2 w-6 h-6 rounded-full ${
-                    isBoosted && !answered
-                      ? "bg-slate-600 text-white"
-                      : "bg-slate-700/60 text-slate-400"
-                  } flex items-center justify-center text-[10px] font-bold`}
+                  className={`absolute left-3 top-1/2 -translate-y-1/2 w-6 h-6 rounded-full bg-slate-700/60 text-slate-400 flex items-center justify-center text-[10px] font-bold`}
                 >
                   {String.fromCharCode(65 + i)}
                 </span>

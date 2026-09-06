@@ -63,31 +63,35 @@ export default function PdfUpload({
       setProgressLabel("Generating questions…");
       setProgress(50);
 
-      const genRes = await fetch("/api/generate-questions", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          text,
-          topics,
-          difficulty: mode === "hard" ? 4 : 3,
-        }),
-      });
-      const genData = await genRes.json();
+      let genData: { questions?: FlashcardQuestion[]; error?: string } | null = null;
+      for (let attempt = 1; attempt <= 3; attempt++) {
+        if (attempt > 1) {
+          setProgressLabel(`Still generating questions… (attempt ${attempt}/3)`);
+          await new Promise((r) => setTimeout(r, 8000));
+        }
+        const genRes = await fetch("/api/generate-questions", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            text,
+            topics,
+            difficulty: mode === "hard" ? 4 : 3,
+          }),
+        });
+        genData = await genRes.json();
+        if (genRes.ok) break;
+      }
 
-      if (!genRes.ok) {
+      if (!genData || !Array.isArray(genData.questions) || genData.questions.length === 0) {
         setProgress(null);
-        setError(genData.error ?? "We couldn't generate questions for this material.");
+        setError(
+          genData?.error ??
+            "We couldn't generate questions for this material. Try again in a minute."
+        );
         return;
       }
 
-      const questions: FlashcardQuestion[] = Array.isArray(genData.questions)
-        ? genData.questions
-        : [];
-      if (questions.length === 0) {
-        setProgress(null);
-        setError("No questions could be generated from this material. Try longer text.");
-        return;
-      }
+      const questions: FlashcardQuestion[] = genData.questions;
 
       setProgress(100);
       setSource(text, topics);
