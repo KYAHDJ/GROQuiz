@@ -31,7 +31,7 @@ import type {
 } from "@/lib/types";
 import ConfirmModal from "./ConfirmModal";
 
-const MAX_PDF_MB = 25;
+const MAX_PDF_MB = 50;
 const TIME_OPTIONS = [15, 30, 45, 60, 90];
 
 interface BuilderItem {

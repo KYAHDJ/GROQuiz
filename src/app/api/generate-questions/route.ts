@@ -83,7 +83,7 @@ export async function POST(req: Request): Promise<NextResponse> {
         const res = await fetch(url, { cache: "no-store" });
         if (!res.ok) continue;
         const len = Number(res.headers.get("content-length") ?? 0);
-        if (len > 40 * 1024 * 1024) continue;
+        if (len > 50 * 1024 * 1024) continue;
         const buf = Buffer.from(await res.arrayBuffer());
         const parsed = await parsePdfBuffer(buf);
         if (parsed.text.trim().length >= 20) {
