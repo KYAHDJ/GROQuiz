@@ -43,12 +43,31 @@ export default function PdfUpload({
   const [groqCount, setGroqCount] = useState<number | null>(null);
 
   useEffect(() => {
-    fetch("/api/status")
-      .then((r) => r.json())
-      .then((d) => {
-        if (typeof d?.availableKeys === "number") setGroqCount(d.availableKeys);
-      })
-      .catch(() => setGroqCount(0));
+    let cancelled = false;
+    const check = async () => {
+      try {
+        const res = await fetch("/api/status");
+        const d = await res.json();
+        if (cancelled) return;
+        if (typeof d?.availableKeys === "number") {
+          setGroqCount(d.availableKeys);
+          return;
+        }
+        throw new Error("bad response");
+      } catch {
+        if (cancelled) return;
+        setTimeout(check, 2500);
+      }
+    };
+    check();
+    const onFocus = () => {
+      if (document.visibilityState === "visible") check();
+    };
+    window.addEventListener("focus", onFocus);
+    return () => {
+      cancelled = true;
+      window.removeEventListener("focus", onFocus);
+    };
   }, []);
   const [mode, setModeLocal] = useState<QuizMode>(state.mode);
   const [fileName, setFileName] = useState<string | null>(null);
