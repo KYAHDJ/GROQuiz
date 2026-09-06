@@ -228,37 +228,56 @@ export default function PdfUpload({
       const all: FlashcardQuestion[] = [];
       let lastErr: string | null = null;
 
-      for (let i = 0; i < blocks.length; i++) {
-        const block = blocks[i];
-        if (!block) continue;
-        setProgressLabel(
-          `Generating questions… part ${i + 1} of ${blocks.length}`
-        );
-        setProgress(Math.round(15 + (i / blocks.length) * 75));
-        const want = Math.max(4, Math.min(6, Math.ceil(block.length / 1100)));
+      const targetTotal = Math.max(10, Math.min(40, Math.ceil(text.length / 120)));
+      let priorPassTotal = -1;
+      let passes = 0;
 
-        for (let attempt = 1; attempt <= 2; attempt++) {
-          if (attempt > 1) await new Promise((r) => setTimeout(r, 2500));
-          try {
-            const res = await fetch("/api/generate-questions", {
-              method: "POST",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({
-                text: block,
-                topics: name,
-                count: want,
-                difficulty: mode === "hard" ? 4 : 3,
-                previous: all.slice(-14).map((q) => q.question),
-              }),
-            });
-            const data = await res.json();
-            if (res.ok && Array.isArray(data.questions) && data.questions.length > 0) {
-              all.push(...data.questions);
-              break;
+      while (all.length < targetTotal && passes < 3 && all.length > priorPassTotal) {
+        priorPassTotal = all.length;
+        passes += 1;
+        const roundPrefix = passes > 1 ? "Squeezing out more questions…" : "Generating questions…";
+
+        for (let i = 0; i < blocks.length; i++) {
+          if (all.length >= targetTotal) break;
+          const block = blocks[i];
+          if (!block) continue;
+
+          setProgressLabel(
+            blocks.length > 1
+              ? `${roundPrefix} part ${i + 1} of ${blocks.length}`
+              : roundPrefix
+          );
+          setProgress(Math.round(12 + ((passes - 1) / 3) * 30 + (i / blocks.length) * 40));
+          const want = Math.max(4, Math.min(12, targetTotal - all.length));
+
+          for (let attempt = 1; attempt <= 2; attempt++) {
+            if (attempt > 1) await new Promise((r) => setTimeout(r, 2500));
+            try {
+              const res = await fetch("/api/generate-questions", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                  text: block,
+                  topics: name,
+                  count: want,
+                  difficulty: mode === "hard" ? 4 : 3,
+                  previous: all.slice(-16).map((q) => q.question),
+                }),
+              });
+              const data = await res.json();
+              if (res.ok && Array.isArray(data.questions) && data.questions.length > 0) {
+                const known = new Set(all.map((q) => q.question.trim().toLowerCase()));
+                const fresh = data.questions.filter(
+                  (q: FlashcardQuestion) =>
+                    q?.question && !known.has(q.question.trim().toLowerCase())
+                );
+                all.push(...fresh);
+                break;
+              }
+              lastErr = data?.error ?? "No questions came back.";
+            } catch {
+              lastErr = "Connection error while generating.";
             }
-            lastErr = data?.error ?? "No questions came back.";
-          } catch {
-            lastErr = "Connection error while generating.";
           }
         }
       }

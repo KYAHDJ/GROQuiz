@@ -184,9 +184,9 @@ export async function POST(req: Request): Promise<NextResponse> {
   }
 
   const difficulty = Math.max(1, Math.min(5, Number(body.difficulty) || 3)) as Difficulty;
-  const perBlock = Math.max(4, Math.min(6, Number(body.count) || 5));
+  const perBlock = Math.max(4, Math.min(12, Number(body.count) || 5));
   const BLOCK_SIZE = 6000;
-  const MAX_TOTAL = 30;
+  const MAX_TOTAL = 40;
 
   const previous = Array.isArray(body.previous)
     ? body.previous.map((p) => String(p)).slice(0, 40)
@@ -240,7 +240,7 @@ export async function POST(req: Request): Promise<NextResponse> {
         ],
         response_format: { type: "json_object" },
         temperature: 0.9,
-        max_tokens: 2048,
+        max_tokens: 4096,
       });
 
       const parsed = extractJson(raw);
