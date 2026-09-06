@@ -7,6 +7,7 @@ import {
   signInEmail,
   signUpEmail,
   signOutFb,
+  signInWithGoogle,
   type FbUser,
 } from "@/lib/firebase/client";
 
@@ -19,6 +20,10 @@ function friendlyError(err: unknown): string {
   if (msg.includes("weak-password")) return "Password is too weak — use at least 6 characters.";
   if (msg.includes("too-many-requests")) return "Too many attempts. Wait a minute, then try again.";
   if (msg.includes("network-request-failed")) return "No internet connection. Try again.";
+  if (msg.includes("popup-closed-by-user") || msg.includes("cancelled-popup-request"))
+    return "Sign-in window closed before finishing. Try again.";
+  if (msg.includes("popup-blocked")) return "Your browser blocked the Google window. Allow popups for this site, then try again.";
+  if (msg.includes("unauthorized-domain")) return "The Google sign-in domain isn't approved yet. Add groquiz.vercel.app in the Firebase console under Authentication → Settings → Authorized domains.";
   return "That didn't work. Please try again.";
 }
 
@@ -64,6 +69,18 @@ export default function AuthModal({
     try {
       if (mode === "signin") await signInEmail(e, password);
       else await signUpEmail(e, password);
+      onClose();
+    } catch (err) {
+      setError(friendlyError(err));
+      setBusy(false);
+    }
+  };
+
+  const signInGoogle = async () => {
+    setBusy(true);
+    setError(null);
+    try {
+      await signInWithGoogle();
       onClose();
     } catch (err) {
       setError(friendlyError(err));
@@ -145,6 +162,39 @@ export default function AuthModal({
               >
                 Create account
               </button>
+            </div>
+
+            <button
+              type="button"
+              onClick={() => void signInGoogle()}
+              disabled={busy}
+              className="w-full flex items-center justify-center gap-2.5 py-2.5 rounded-xl border border-[#3A2E50] bg-[#151021] text-sm font-semibold text-[#F0EAF6] hover:border-fuchsia-400/50 transition-all disabled:opacity-60"
+            >
+              <svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true">
+                <path
+                  fill="#4285F4"
+                  d="M23.5 12.27c0-.79-.07-1.54-.2-2.27H12v4.51h6.46a5.52 5.52 0 0 1-2.4 3.62v3h3.87c2.27-2.09 3.57-5.17 3.57-8.86Z"
+                />
+                <path
+                  fill="#34A853"
+                  d="M12 24a11.44 11.44 0 0 0 7.93-2.87l-3.87-3c-1.08.72-2.47 1.15-4.06 1.15-3.12 0-5.76-2.1-6.7-4.94H1.28v3.09A12 12 0 0 0 12 24Z"
+                />
+                <path
+                  fill="#FBBC05"
+                  d="M5.3 14.34a7.2 7.2 0 0 1 0-4.68V6.57H1.28a12 12 0 0 0 0 10.86l4.02-3.09Z"
+                />
+                <path
+                  fill="#EA4335"
+                  d="M12 4.72c1.94 0 3.68.67 5.05 1.98l3.55-3.55A11.44 11.44 0 0 0 12 0 12 12 0 0 0 1.28 6.57l4.02 3.09C6.24 6.82 8.88 4.72 12 4.72Z"
+                />
+              </svg>
+              Continue with Google
+            </button>
+
+            <div className="flex items-center gap-3">
+              <div className="flex-1 h-px bg-[#3A2E50]" />
+              <span className="text-xs text-[#8D7FA0]">or use email</span>
+              <div className="flex-1 h-px bg-[#3A2E50]" />
             </div>
 
             <input

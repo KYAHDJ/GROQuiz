@@ -8,6 +8,8 @@ import {
   signInWithEmailAndPassword,
   createUserWithEmailAndPassword,
   signOut as firebaseSignOut,
+  GoogleAuthProvider,
+  signInWithPopup,
   type User,
 } from "firebase/auth";
 import {
@@ -132,6 +134,11 @@ export function signInEmail(email: string, password: string): Promise<void> {
 export function signUpEmail(email: string, password: string): Promise<void> {
   if (!client) return Promise.reject(new Error("Firebase is unavailable"));
   return createUserWithEmailAndPassword(client.auth, email, password).then(() => {});
+}
+
+export function signInWithGoogle(): Promise<void> {
+  if (!client) return Promise.reject(new Error("Firebase is unavailable"));
+  return signInWithPopup(client.auth, new GoogleAuthProvider()).then(() => {});
 }
 
 export async function signOutFb(): Promise<void> {
