@@ -62,13 +62,14 @@ interface QuizState {
   results: QuestionResult[];
   currentText: string;
   currentTopics: string;
+  isManual: boolean;
   displayingAnswer: boolean;
   sessionId: string;
 }
 
 type QuizAction =
   | { type: "SET_SOURCE"; text: string; topics: string }
-  | { type: "LOAD_QUESTIONS"; questions: FlashcardQuestion[] }
+  | { type: "LOAD_QUESTIONS"; questions: FlashcardQuestion[]; manual?: boolean; topics?: string }
   | { type: "SET_SCREEN"; screen: Screen }
   | { type: "SET_MODE"; mode: QuizMode }
   | { type: "SET_TIME_LIMIT"; seconds: number }
@@ -110,6 +111,7 @@ const initialState: QuizState = {
   results: [],
   currentText: "",
   currentTopics: "",
+  isManual: false,
   displayingAnswer: false,
   sessionId: "",
 };
@@ -155,6 +157,7 @@ function loadSave(): QuizState {
       results: saved.results ?? [],
       currentText: saved.currentText ?? "",
       currentTopics: saved.currentTopics ?? "",
+      isManual: saved.isManual ?? false,
       screen: saved.screen === "results" ? "results" : "quiz",
     };
   } catch {
@@ -194,6 +197,7 @@ function persistSave(state: QuizState): void {
     results: state.results,
     currentText: state.currentText,
     currentTopics: state.currentTopics,
+    isManual: state.isManual,
     screen: state.screen === "results" ? "results" : "quiz",
     mode: state.mode,
     savedAt: Date.now(),
@@ -221,7 +225,7 @@ function pointsForAnswer(result: {
   fiftyFiftyUsed: boolean;
 }): { points: number; deltaTier: number; newStreak: number } {
   if (!result.correct) {
-    return { points: 0, deltaTier: -1, newStreak: 0 };
+    return { points: 10, deltaTier: -1, newStreak: 0 };
   }
 
   const fast = result.elapsed < 10;
@@ -265,6 +269,8 @@ function reduce(state: QuizState, action: QuizAction): QuizState {
         retryIds: [],
         retryRound: false,
         fiftyFiftyUsed: false,
+        isManual: action.manual ?? false,
+        currentTopics: action.topics ?? state.currentTopics,
         screen: "quiz",
         results: [],
         sessionId: freshId("sess"),
@@ -566,7 +572,10 @@ function reduce(state: QuizState, action: QuizAction): QuizState {
 interface QuizContextValue {
   state: QuizState;
   setSource: (text: string, topics: string) => void;
-  loadQuestions: (questions: FlashcardQuestion[]) => void;
+  loadQuestions: (
+    questions: FlashcardQuestion[],
+    opts?: { manual?: boolean; topics?: string }
+  ) => void;
   setScreen: (screen: Screen) => void;
   setMode: (mode: QuizMode) => void;
   setTimeLimit: (seconds: number) => void;
@@ -608,7 +617,14 @@ export function QuizProvider({ children }: { children: ReactNode }) {
   const hintPendingRef = useRef<Set<string>>(new Set());
 
   useEffect(() => {
-    setHasSavedGame(state.screen !== "landing" && state.questions.length > 0);
+    let restored = false;
+    try {
+      const raw = localStorage.getItem(SAVE_KEY);
+      restored = Boolean(raw && (JSON.parse(raw) as SavedGame)?.questions?.length);
+    } catch {
+      restored = false;
+    }
+    setHasSavedGame(state.questions.length > 0 || restored);
     persistSave(state);
   }, [state]);
 
@@ -743,7 +759,13 @@ export function QuizProvider({ children }: { children: ReactNode }) {
     return {
       state,
       setSource: (text, topics) => dispatch({ type: "SET_SOURCE", text, topics }),
-      loadQuestions: (questions) => dispatch({ type: "LOAD_QUESTIONS", questions }),
+      loadQuestions: (questions, opts) =>
+        dispatch({
+          type: "LOAD_QUESTIONS",
+          questions,
+          manual: opts?.manual,
+          topics: opts?.topics,
+        }),
       setScreen: (screen) => dispatch({ type: "SET_SCREEN", screen }),
       setMode: (mode) => dispatch({ type: "SET_MODE", mode }),
       setTimeLimit: (seconds) => dispatch({ type: "SET_TIME_LIMIT", seconds }),

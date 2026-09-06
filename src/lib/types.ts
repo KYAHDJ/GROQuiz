@@ -82,5 +82,6 @@ export interface SavedGame {
   currentTopics: string;
   screen: "quiz" | "results";
   mode: QuizMode;
+  isManual?: boolean;
   savedAt: number;
 }

@@ -5,7 +5,7 @@ import { useQuiz } from "@/context/QuizContext";
 
 export default function HintTimer() {
   const { state, tick } = useQuiz();
-  const { elapsed, answered, timerPaused, timeLimit, mode } = state;
+  const { elapsed, answered, timerPaused, timeLimit, mode, isManual } = state;
 
   const tickRef = useRef(tick);
   tickRef.current = tick;
@@ -77,7 +77,7 @@ export default function HintTimer() {
           {timeText}
         </span>
       </div>
-      {mode === "balanced" && (
+      {mode === "balanced" && !isManual && (
         <div className="flex gap-1">
           {[0, 1, 2, 3].map((i) => (
             <div

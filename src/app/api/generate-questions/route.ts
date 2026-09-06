@@ -151,7 +151,7 @@ Make the questions meaningful, test actual understanding, include plausible dist
 
     if (questions.length === 0) {
       return NextResponse.json(
-        { error: "Groq returned no usable questions. Please try again." },
+        { error: "Couldn't generate usable questions. Please try again." },
         { status: 503 }
       );
     }
@@ -160,7 +160,7 @@ Make the questions meaningful, test actual understanding, include plausible dist
   } catch (err) {
     console.error("generate-questions error:", err);
     return NextResponse.json(
-      { error: "Groq couldn't generate questions right now. Try again in a moment." },
+      { error: "Questions couldn't be generated right now. Try again in a moment." },
       { status: 503 }
     );
   }

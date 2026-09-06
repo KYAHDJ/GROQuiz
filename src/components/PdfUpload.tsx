@@ -13,6 +13,8 @@ import {
   Check,
   Trash2,
   Star,
+  Plus,
+  RotateCcw,
 } from "lucide-react";
 import { useQuiz } from "@/context/QuizContext";
 import type {
@@ -20,9 +22,17 @@ import type {
   HistoryRecord,
   QuizMode,
 } from "@/lib/types";
+import ConfirmModal from "./ConfirmModal";
 
 const MAX_PDF_MB = 4;
 const TIME_OPTIONS = [15, 30, 45, 60, 90];
+
+interface BuilderItem {
+  id: string;
+  question: string;
+  options: string[];
+  correct: number;
+}
 
 function BrandLogo({ size = 36 }: { size?: number }) {
   return (
@@ -62,10 +72,20 @@ export default function PdfUpload({
   const [progressLabel, setProgressLabel] = useState("");
   const [topics, setTopics] = useState("");
   const [pastedText, setPastedText] = useState("");
-  const [inputMode, setInputMode] = useState<"upload" | "paste">("upload");
+  const [inputMode, setInputMode] = useState<"upload" | "paste" | "build">("upload");
   const [isDragging, setIsDragging] = useState(false);
   const [showAll, setShowAll] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  const [builderItems, setBuilderItems] = useState<BuilderItem[]>([]);
+  const [draft, setDraft] = useState<BuilderItem>({
+    id: "",
+    question: "",
+    options: ["", "", "", ""],
+    correct: 0,
+  });
+  const [buildError, setBuildError] = useState<string | null>(null);
+  const [deleteTarget, setDeleteTarget] = useState<HistoryRecord | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -211,6 +231,48 @@ export default function PdfUpload({
     await startQuestionsFromText(pastedText);
   };
 
+  const addBuilderQuestion = () => {
+    const q = draft.question.trim();
+    const opts = draft.options.map((o) => o.trim());
+    if (q.length < 10) {
+      setBuildError("Write a full question (at least a few words).");
+      return;
+    }
+    if (opts.some((o) => !o)) {
+      setBuildError("Fill in all 4 answer options.");
+      return;
+    }
+    setBuilderItems((prev) => [
+      ...prev,
+      { id: `manual-${Date.now()}-${prev.length}`, question: q, options: opts, correct: draft.correct },
+    ]);
+    setDraft({ id: "", question: "", options: ["", "", "", ""], correct: 0 });
+    setBuildError(null);
+  };
+
+  const removeBuilderQuestion = (id: string) => {
+    setBuilderItems((prev) => prev.filter((b) => b.id !== id));
+  };
+
+  const startBuilderQuiz = () => {
+    if (builderItems.length < 3) {
+      setBuildError("Add at least 3 questions to start the quiz.");
+      return;
+    }
+    const questions: FlashcardQuestion[] = builderItems.map((b) => ({
+      id: b.id,
+      question: b.question,
+      options: b.options,
+      correctIndex: b.correct,
+      explanation: "",
+      initialDifficulty: mode === "hard" ? 4 : 3,
+    }));
+    loadQuestions(questions, {
+      manual: true,
+      topics: topics.trim() || "My custom quiz",
+    });
+  };
+
   const active = progress !== null;
   const visibleHistory = showAll ? history : history.slice(0, 5);
   const accFor = (r: HistoryRecord) => {
@@ -251,14 +313,13 @@ export default function PdfUpload({
               <span className="text-[#94A3B8]">Checking AI keys…</span>
             ) : groqCount > 0 ? (
               <>
-                Groq ready —{" "}
                 <span className="font-semibold text-emerald-400">
                   {groqCount} {groqCount === 1 ? "key" : "keys"}
                 </span>{" "}
                 connected
               </>
             ) : (
-              <span className="text-red-400 font-medium">Groq not connected</span>
+              <span className="text-red-400 font-medium">Not connected</span>
             )}
           </span>
         </div>
@@ -274,8 +335,8 @@ export default function PdfUpload({
             </span>
           </h1>
           <p className="text-fluid-base text-[#94A3B8]">
-            Upload a PDF or paste text — Groq AI generates multiple-choice flashcards
-            instantly.
+            Upload a PDF, paste text, or build your own — an adaptive quiz that
+            adjusts to your answers.
           </p>
         </div>
 
@@ -346,8 +407,7 @@ export default function PdfUpload({
           </p>
           <div className="flex gap-2 flex-wrap">
             {TIME_OPTIONS.map((t) => {
-              const on =
-                mode === "hard" ? t === 30 : state.timeLimit === t;
+              const on = mode === "hard" ? t === 30 : state.timeLimit === t;
               const isFixed = mode === "hard";
               return (
                 <button
@@ -423,6 +483,17 @@ export default function PdfUpload({
             }`}
           >
             Paste Text
+          </button>
+          <button
+            type="button"
+            onClick={() => setInputMode("build")}
+            className={`flex-1 py-2 rounded-lg text-sm font-medium transition-all duration-150 ${
+              inputMode === "build"
+                ? "bg-[#334155] text-[#E2E8F0]"
+                : "text-[#64748B] hover:text-[#94A3B8]"
+            }`}
+          >
+            Build Quiz
           </button>
         </div>
 
@@ -507,7 +578,7 @@ export default function PdfUpload({
               </>
             )}
           </div>
-        ) : (
+        ) : inputMode === "paste" ? (
           <div className="bg-[#1E293B] rounded-2xl border border-[#334155] p-5 space-y-4 screen-enter">
             <div className="space-y-2">
               <label className="text-xs font-semibold text-[#94A3B8] uppercase tracking-wider">
@@ -559,6 +630,134 @@ export default function PdfUpload({
               Generate quiz
             </button>
           </div>
+        ) : (
+          <div className="bg-[#1E293B] rounded-2xl border border-[#334155] p-5 space-y-4 screen-enter">
+            <div className="flex items-center justify-between gap-2 flex-wrap">
+              <p className="text-sm font-semibold text-[#E2E8F0]">Build your own quiz</p>
+              <p className="text-xs text-[#64748B]">
+                {builderItems.length} question{builderItems.length === 1 ? "" : "s"} added
+              </p>
+            </div>
+
+            <div className="space-y-2">
+              <label className="text-xs font-semibold text-[#94A3B8] uppercase tracking-wider">
+                Question
+              </label>
+              <textarea
+                value={draft.question}
+                onChange={(e) => setDraft({ ...draft, question: e.target.value })}
+                placeholder="Type your question here…"
+                rows={2}
+                className="w-full bg-[#0F172A] border border-[#334155] rounded-xl px-4 py-3 text-sm text-[#E2E8F0] placeholder-[#475569] focus:outline-none focus:border-cyan-400/60 transition-colors [overflow-wrap:anywhere]"
+              />
+            </div>
+
+            <div className="space-y-2">
+              <label className="text-xs font-semibold text-[#94A3B8] uppercase tracking-wider">
+                Answers — tap the circle to mark the correct one
+              </label>
+              {draft.options.map((opt, i) => {
+                const letter = String.fromCharCode(65 + i);
+                const isCorrect = draft.correct === i;
+                return (
+                  <div
+                    key={i}
+                    className={`flex items-center gap-2 rounded-xl border px-3 py-2.5 transition-colors ${
+                      isCorrect
+                        ? "border-cyan-400 bg-cyan-400/10"
+                        : "border-[#334155] bg-[#0F172A]"
+                    }`}
+                  >
+                    <button
+                      type="button"
+                      onClick={() => setDraft({ ...draft, correct: i })}
+                      aria-label={`Mark option ${letter} as correct`}
+                      className={`w-6 h-6 shrink-0 rounded-full border-2 flex items-center justify-center transition-colors ${
+                        isCorrect
+                          ? "border-cyan-400 bg-cyan-400 text-[#0F172A]"
+                          : "border-[#334155] text-transparent hover:border-cyan-400/60"
+                      }`}
+                    >
+                      <Check size={12} strokeWidth={3} />
+                    </button>
+                    <span className="text-xs font-bold text-[#64748B] w-5 shrink-0">
+                      {letter}
+                    </span>
+                    <input
+                      value={draft.options[i]}
+                      onChange={(e) => {
+                        const options = [...draft.options];
+                        options[i] = e.target.value;
+                        setDraft({ ...draft, options });
+                      }}
+                      placeholder={`Option ${letter}`}
+                      className="flex-1 min-w-0 bg-transparent text-sm text-[#E2E8F0] placeholder-[#475569] focus:outline-none"
+                    />
+                  </div>
+                );
+              })}
+            </div>
+
+            {buildError && (
+              <p className="text-xs text-red-400 [overflow-wrap:anywhere]">{buildError}</p>
+            )}
+
+            <button
+              type="button"
+              onClick={addBuilderQuestion}
+              className="w-full flex items-center justify-center gap-2 py-2.5 rounded-xl border border-cyan-400/40 bg-cyan-400/10 text-cyan-400 text-sm font-semibold hover:bg-cyan-400/20 transition-all"
+            >
+              <Plus size={15} />
+              Add question
+            </button>
+
+            {builderItems.length > 0 && (
+              <div className="space-y-2">
+                {builderItems.map((b, i) => (
+                  <div
+                    key={b.id}
+                    className="flex items-start gap-3 bg-[#0F172A] rounded-xl border border-[#334155] px-3 py-2.5"
+                  >
+                    <span className="text-xs font-bold text-cyan-400 w-5 shrink-0 mt-0.5">
+                      {i + 1}
+                    </span>
+                    <p className="flex-1 min-w-0 text-sm text-[#94A3B8] leading-snug [overflow-wrap:anywhere]">
+                      {b.question}
+                    </p>
+                    <button
+                      type="button"
+                      onClick={() => removeBuilderQuestion(b.id)}
+                      aria-label={`Remove question ${i + 1}`}
+                      className="shrink-0 w-7 h-7 flex items-center justify-center rounded-lg text-[#64748B] hover:text-red-400 hover:bg-red-400/10 transition-colors"
+                    >
+                      <X size={14} />
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            <div className="space-y-2">
+              <label className="text-xs font-semibold text-[#94A3B8] uppercase tracking-wider">
+                Quiz title (optional)
+              </label>
+              <input
+                value={topics}
+                onChange={(e) => setTopics(e.target.value)}
+                placeholder="e.g. My French vocab quiz"
+                className="w-full bg-[#0F172A] border border-[#334155] rounded-xl px-4 py-3 text-sm text-[#E2E8F0] placeholder-[#475569] focus:outline-none focus:border-cyan-400/60 transition-colors"
+              />
+            </div>
+
+            <button
+              type="button"
+              onClick={startBuilderQuiz}
+              disabled={builderItems.length < 3 || active}
+              className="w-full py-3 rounded-xl font-semibold text-sm transition-all duration-200 disabled:opacity-40 disabled:cursor-not-allowed bg-gradient-to-r from-cyan-500 to-cyan-400 text-[#0F172A] hover:from-cyan-400 hover:to-cyan-300 shadow-lg shadow-cyan-500/20"
+            >
+              Start quiz
+            </button>
+          </div>
         )}
 
         {/* History */}
@@ -584,7 +783,7 @@ export default function PdfUpload({
                 return (
                   <div
                     key={r.id}
-                    className="group flex items-center justify-between gap-3 bg-[#1E293B] rounded-xl px-4 py-3 border border-[#334155] hover:border-[#475569] transition-colors cursor-pointer"
+                    className="group flex items-center justify-between gap-2 bg-[#1E293B] rounded-xl pl-4 pr-2 py-3 border border-[#334155] hover:border-[#475569] transition-colors cursor-pointer"
                     onClick={() => onReview?.(r)}
                   >
                     <div className="min-w-0">
@@ -596,9 +795,9 @@ export default function PdfUpload({
                         {new Date(r.date).toLocaleDateString()}
                       </p>
                     </div>
-                    <div className="flex items-center gap-2 shrink-0">
+                    <div className="flex items-center gap-1 shrink-0">
                       <span
-                        className={`px-3 py-1 rounded-full text-xs font-bold ${
+                        className={`px-3 py-1 rounded-full text-xs font-bold mr-1 ${
                           acc >= 85
                             ? "bg-emerald-400/20 text-emerald-400"
                             : acc >= 70
@@ -610,13 +809,26 @@ export default function PdfUpload({
                       </span>
                       <button
                         type="button"
+                        aria-label="Take this quiz again"
+                        title="Take again"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          loadQuestions(r.questions, {
+                            manual: true,
+                            topics: r.topic,
+                          });
+                        }}
+                        className="w-8 h-8 flex items-center justify-center rounded-lg text-[#64748B] hover:text-cyan-400 hover:bg-cyan-400/10 transition-colors"
+                      >
+                        <RotateCcw size={15} />
+                      </button>
+                      <button
+                        type="button"
                         aria-label="Delete quiz"
                         title="Delete quiz"
                         onClick={(e) => {
                           e.stopPropagation();
-                          if (window.confirm(`Delete "${r.topic}" from history?`)) {
-                            deleteHistory(r.id);
-                          }
+                          setDeleteTarget(r);
                         }}
                         className="w-8 h-8 flex items-center justify-center rounded-lg text-[#475569] hover:text-red-400 hover:bg-red-400/10 transition-colors"
                       >
@@ -638,8 +850,24 @@ export default function PdfUpload({
       {/* Footer credit */}
       <footer className="text-center mt-12 text-xs text-[#475569] flex items-center justify-center gap-1.5">
         <Star size={10} className="text-violet-500" />
-        Built with Groq · GROQuiz
+        GROQuiz
       </footer>
+
+      <ConfirmModal
+        open={Boolean(deleteTarget)}
+        title="Delete this quiz?"
+        message={
+          deleteTarget
+            ? `"${deleteTarget.topic}" will be removed from your history. This can't be undone.`
+            : undefined
+        }
+        confirmLabel="Delete"
+        onConfirm={() => {
+          if (deleteTarget) deleteHistory(deleteTarget.id);
+          setDeleteTarget(null);
+        }}
+        onCancel={() => setDeleteTarget(null)}
+      />
     </div>
   );
 }

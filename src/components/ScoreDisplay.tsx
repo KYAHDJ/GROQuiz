@@ -361,7 +361,7 @@ export default function ScoreDisplay({
       {/* Footer credit */}
       <footer className="text-center py-4 text-xs text-[#334155] flex items-center justify-center gap-1.5">
         <Star size={10} className="text-violet-500" />
-        Built with Groq · GROQuiz
+        GROQuiz
       </footer>
     </div>
   );

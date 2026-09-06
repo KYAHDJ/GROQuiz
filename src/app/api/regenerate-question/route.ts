@@ -124,7 +124,7 @@ Randomize the position of the correct answer and use plausible distractors.`;
     const item = (parsed.question ?? null) as Record<string, unknown> | null;
     if (!item) {
       return NextResponse.json(
-        { error: "Groq returned an empty question. It will retry automatically." },
+        { error: "Got an empty question. It will retry automatically." },
         { status: 503 }
       );
     }
@@ -135,7 +135,7 @@ Randomize the position of the correct answer and use plausible distractors.`;
 
     if (options.length < 2 || !questionText) {
       return NextResponse.json(
-        { error: "Groq returned an incomplete question. It will retry automatically." },
+        { error: "Got an incomplete question. It will retry automatically." },
         { status: 503 }
       );
     }
@@ -165,7 +165,7 @@ Randomize the position of the correct answer and use plausible distractors.`;
   } catch (err) {
     console.error("regenerate-question error:", err);
     return NextResponse.json(
-      { error: "Groq couldn't adapt the question right now. It will retry automatically." },
+      { error: "Couldn't adapt the question right now. It will retry automatically." },
       { status: 503 }
     );
   }

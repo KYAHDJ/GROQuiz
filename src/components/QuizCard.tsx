@@ -30,7 +30,7 @@ function highlightKeywords(text: string): React.ReactNode {
           key={i}
           className={
             top5.has(w.toLowerCase().trim())
-              ? "text-[#E2E8F0] font-semibold underline decoration-amber-400 decoration-2 underline-offset-2"
+              ? "bg-amber-400/20 text-[#E2E8F0] rounded-[3px] px-0.5"
               : ""
           }
         >
@@ -54,10 +54,10 @@ export default function QuizCard() {
     requestHint,
   } = useQuiz();
 
-  const { selected, answered, hintStage, timerPaused, inventory, mode, retryRound } =
+  const { selected, answered, hintStage, timerPaused, inventory, mode, retryRound, isManual } =
     state;
 
-  const hintsOn = mode === "balanced";
+  const hintsOn = mode === "balanced" && !isManual;
 
   const q: FlashcardQuestion | null = currentQuestion;
 
@@ -67,6 +67,7 @@ export default function QuizCard() {
   const [shrunk, setShrunk] = useState<Set<number>>(new Set());
   const [powerupUsed, setPowerupUsed] = useState(false);
   const [freezeActive, setFreezeActive] = useState(false);
+  const [freezeLeft, setFreezeLeft] = useState<number | null>(null);
   const shrinkPickedRef = useRef(false);
   const freezeQuestionIdRef = useRef<string | undefined>(undefined);
   const answeredRef = useRef(answered);
@@ -90,7 +91,21 @@ export default function QuizCard() {
     setPowerupUsed(false);
     shrinkPickedRef.current = false;
     setFreezeActive(false);
+    setFreezeLeft(null);
   }, [q?.id]);
+
+  useEffect(() => {
+    if (!freezeActive) {
+      setFreezeLeft(null);
+      return;
+    }
+    setFreezeLeft(15);
+    const iv = setInterval(
+      () => setFreezeLeft((v) => (v === null || v <= 1 ? 0 : v - 1)),
+      1000
+    );
+    return () => clearInterval(iv);
+  }, [freezeActive]);
 
   const showTip = hintsOn && hintStage >= 2 && !answered;
   const showKeywords = hintsOn && hintStage >= 1 && !answered;
@@ -208,7 +223,15 @@ export default function QuizCard() {
         {freezeActive && (
           <div className="bg-cyan-400/10 border border-cyan-400/30 rounded-xl px-4 py-2.5 text-xs text-cyan-300 flex items-center gap-2 screen-enter">
             <Clock size={13} className="shrink-0" />
-            Timer frozen for 15 seconds — take your time!
+            <span className="flex-1">
+              Timer frozen — {freezeLeft ?? 15}s left, take your time!
+            </span>
+            <div className="w-16 h-1.5 bg-[#0F172A] rounded-full overflow-hidden shrink-0">
+              <div
+                className="h-full bg-cyan-400 rounded-full transition-all duration-1000"
+                style={{ width: `${((freezeLeft ?? 15) / 15) * 100}%` }}
+              />
+            </div>
           </div>
         )}
 
@@ -259,8 +282,12 @@ export default function QuizCard() {
               }
             } else if (isShrunk) {
               rowClass =
-                "border-[#334155] bg-[#0F172A] text-[#475569] answer-eliminated cursor-not-allowed";
-              extra = "scale-[0.93] origin-left py-1.5 text-xs opacity-60";
+                "border-[#334155] bg-[#0F172A] text-[#64748B] cursor-not-allowed";
+              extra = "scale-[0.92] origin-left py-1.5 text-xs opacity-70";
+            } else if (fiftyActive) {
+              rowClass =
+                "border-cyan-400/40 bg-cyan-400/5 text-[#E2E8F0] ring-1 ring-cyan-400/30";
+              extra = "py-4 text-base font-semibold";
             } else if (isSelected) {
               rowClass = "border-cyan-400 bg-cyan-400/10 text-[#E2E8F0]";
               badgeClass = `${badgeBase} border-cyan-400 bg-cyan-400 text-[#0F172A]`;
@@ -317,6 +344,15 @@ export default function QuizCard() {
               <span className="ml-2 text-xs font-normal text-[#64748B]">
                 answered in {state.elapsed}s
               </span>
+              {questionResult && (
+                <span
+                  className={`ml-2 inline-flex items-center gap-1 text-xs font-bold tabular-nums ${
+                    isCorrectAnswer ? "text-emerald-400" : "text-[#94A3B8]"
+                  }`}
+                >
+                  +{questionResult.pointsEarned} pts
+                </span>
+              )}
             </div>
 
             <div className="flex gap-4 bg-[#0F172A] rounded-xl border border-[#334155] p-4">
@@ -360,10 +396,11 @@ export default function QuizCard() {
             type="button"
             disabled={inventory["ai-clarifier"] <= 0 || loadingClarify}
             onClick={() => handleUsePowerup("ai-clarifier")}
-            className="flex items-center gap-2 px-4 py-2 rounded-full border border-violet-400/40 bg-violet-400/10 text-violet-400 text-xs font-semibold hover:bg-violet-400/20 transition-all disabled:opacity-30 disabled:cursor-not-allowed"
+            className={`flex items-center gap-2 px-4 py-2 rounded-full border border-violet-400/40 bg-violet-400/10 text-violet-400 text-xs font-semibold hover:bg-violet-400/20 transition-all disabled:opacity-30 disabled:cursor-not-allowed ${isManual ? "hidden" : ""}`}
           >
             <BrainCircuit size={14} />
-            AI Clarifier <span className="opacity-60">×{inventory["ai-clarifier"]}</span>
+            AI Clarifier{" "}
+            <span className="opacity-60">×{inventory["ai-clarifier"]}</span>
           </button>
         </div>
       )}

@@ -9,6 +9,7 @@ import QuestionNav from "./QuestionNav";
 import QuizCard from "./QuizCard";
 import PowerupShop from "./PowerupShop";
 import ScoreDisplay from "./ScoreDisplay";
+import ConfirmModal from "./ConfirmModal";
 
 function BrandLogo({ size = 32 }: { size?: number }) {
   return (
@@ -28,10 +29,11 @@ export default function GamePage() {
   const [shopOpen, setShopOpen] = useState(false);
   const [review, setReview] = useState<HistoryRecord | null>(null);
   const [pausedOpen, setPausedOpen] = useState(false);
+  const [exitOpen, setExitOpen] = useState(false);
   const adaptingRef = useRef<number | null>(null);
 
   useEffect(() => {
-    if (state.screen === "quiz" && state.mode === "balanced" && !state.retryRound) {
+    if (state.screen === "quiz" && state.mode === "balanced" && !state.retryRound && !state.isManual) {
       const idx = state.currentIndex + 1;
       if (idx < state.questions.length && adaptingRef.current !== idx) {
         adaptingRef.current = idx;
@@ -59,7 +61,7 @@ export default function GamePage() {
             Generating your quiz…
           </p>
           <p className="text-xs text-[#64748B] mt-1">
-            Groq is writing flashcards based on your material.
+            Preparing your adaptive flashcards.
           </p>
         </div>
       </div>
@@ -118,15 +120,7 @@ export default function GamePage() {
             </button>
             <button
               type="button"
-              onClick={() => {
-                if (
-                  window.confirm(
-                    "Exit this quiz? Your progress will be cleared (you can start a new one)."
-                  )
-                ) {
-                  resetGame();
-                }
-              }}
+              onClick={() => setExitOpen(true)}
               className="text-sm text-[#64748B] hover:text-red-400 transition-colors"
             >
               Exit quiz
@@ -240,8 +234,17 @@ export default function GamePage() {
 
       <footer className="text-center py-4 text-xs text-[#334155] flex items-center justify-center gap-1.5">
         <Star size={10} className="text-violet-500" />
-        Built with Groq · GROQuiz
+        GROQuiz
       </footer>
+
+      <ConfirmModal
+        open={exitOpen}
+        title="Exit this quiz?"
+        message="Your progress will be cleared — you can start a new one anytime."
+        confirmLabel="Exit Quiz"
+        onConfirm={() => resetGame()}
+        onCancel={() => setExitOpen(false)}
+      />
 
       <PowerupShop open={shopOpen} onClose={() => setShopOpen(false)} />
     </div>
