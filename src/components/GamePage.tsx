@@ -1,7 +1,7 @@
 "use client";
 
-import { useState } from "react";
-import { ShoppingBag, Play } from "lucide-react";
+import { useEffect, useState } from "react";
+import { ShoppingBag, Play, ArrowLeft } from "lucide-react";
 import { useQuiz } from "@/context/QuizContext";
 import type { HistoryRecord } from "@/lib/types";
 import PdfUpload from "./PdfUpload";
@@ -13,9 +13,15 @@ import PowerupShop from "./PowerupShop";
 import ScoreDisplay from "./ScoreDisplay";
 
 export default function GamePage() {
-  const { state, togglePause } = useQuiz();
+  const { state, togglePause, resetGame, adaptUpcoming } = useQuiz();
   const [shopOpen, setShopOpen] = useState(false);
   const [review, setReview] = useState<HistoryRecord | null>(null);
+
+  useEffect(() => {
+    if (state.screen === "quiz" && state.mode === "balanced" && !state.retryRound) {
+      adaptUpcoming();
+    }
+  }, [state.currentIndex, state.screen, state.mode, state.retryRound, adaptUpcoming]);
 
   if (state.screen === "landing") {
     if (review) {
@@ -40,6 +46,21 @@ export default function GamePage() {
   return (
     <div className="min-h-dvh flex flex-col">
       <PowerupBar />
+
+      <div className="flex items-center justify-center pt-3 px-4">
+        <button
+          type="button"
+          onClick={() => {
+            if (window.confirm("Exit this quiz? Your progress will be cleared (you can start a new one).")) {
+              resetGame();
+            }
+          }}
+          className="flex items-center gap-1.5 text-xs font-semibold text-slate-400 hover:text-slate-100 border border-slate-700 hover:border-slate-500 bg-slate-800/50 hover:bg-slate-700/60 rounded-full px-3 py-1.5 transition-colors"
+        >
+          <ArrowLeft size={13} />
+          Exit quiz
+        </button>
+      </div>
 
       <div className="flex-1 flex flex-col items-center justify-center py-6 gap-6">
         {state.timerPaused && (

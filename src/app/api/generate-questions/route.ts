@@ -1,9 +1,17 @@
 import { NextResponse } from "next/server";
-import { chatWithFallback, DEFAULT_MODEL, parseJsonContent } from "@/lib/groq";
+import { chatWithFallback, DEFAULT_MODEL, DIFFICULTY_READABILITY, parseJsonContent } from "@/lib/groq";
 import type { GenerateQuestionsRequest, GenerateQuestionsResponse, FlashcardQuestion, Difficulty } from "@/lib/types";
 
 export const runtime = "nodejs";
 export const maxDuration = 60;
+
+const READABILITY_STYLES = [
+  "fresh angle",
+  "unusual angle",
+  "everyday-life angle",
+  "cause-and-effect angle",
+  "apply-it-to-real-life angle",
+];
 
 const DIFFICULTY_LABELS: Record<number, string> = {
   1: "beginner foundational",
@@ -52,14 +60,19 @@ function fallbackQuestions(text: string, difficulty: Difficulty, count: number):
   return questions;
 }
 
-function extractJson(raw: string): unknown {
+function extractJson(raw: string): unknown[] {
+  const parsed = parseJsonContent(raw);
+  if (parsed && typeof parsed === "object") {
+    const list = (parsed as Record<string, unknown>).questions;
+    if (Array.isArray(list)) return list;
+  }
   const cleaned = raw.replace(/^```(?:json)?\s*/i, "").replace(/```\s*$/, "");
   const start = cleaned.indexOf("[");
   const end = cleaned.lastIndexOf("]");
   if (start === -1 || end === -1 || end < start) {
     throw new Error("No JSON array found in response");
   }
-  return JSON.parse(cleaned.slice(start, end + 1));
+  return JSON.parse(cleaned.slice(start, end + 1)) as unknown[];
 }
 
 function sanitizeQuestions(parsed: unknown, difficulty: Difficulty, count: number): FlashcardQuestion[] {
@@ -118,21 +131,47 @@ export async function POST(req: Request): Promise<NextResponse> {
     ? `Focus on these topics: ${body.topics.trim()}\n`
     : "";
 
-  const prompt = `You are an expert quiz writer. Create ${count} multiple-choice flashcards from the given source material.
+  const seed = Math.floor(Math.random() * 1_000_000);
+  const style = READABILITY_STYLES[Math.floor(Math.random() * READABILITY_STYLES.length)];
+  const questionTypes = [
+    "definition",
+    "cause-and-effect",
+    "comparison",
+    "what-would-happen-if",
+    "apply-it-to-a-real-situation",
+    "true-or-false",
+    "fill-in-the-blank",
+  ]
+    .sort(() => Math.random() - 0.5)
+    .join(", ");
+
+  const prompt = `You are an expert quiz writer famous for NEVER repeating yourself. Create ${count} multiple-choice flashcards from the given source material. This is round #${seed} — use a ${style} this time.
 
 Source text:
 ${text.slice(0, 6000)}
 
 ${topicsLine}
-Difficulty level: ${DIFFICULTY_LABELS[difficulty]} (1=beginner, 5=expert).
+Requested difficulty: ${DIFFICULTY_LABELS[difficulty]} (1=beginner, 5=expert).
+READABILITY RULE — the wording itself must match this level exactly:
+${DIFFICULTY_READABILITY[difficulty]}
 
-CRITICAL: Respond with ONLY a valid JSON array. No markdown, no prose around it. Each object MUST have this exact shape:
+UNIQUENESS RULES — very important:
+- Each of the ${count} questions must use a DIFFERENT style and a DIFFERENT type (e.g. one definition, one cause-and-effect, one real-life application). Vary question types among: ${questionTypes}.
+- No two questions may share the same sentence pattern, the same opening words, or the same correct answer.
+- Write each question in your own fresh words. Never copy phrasing from the examples or from other questions.
+- Harder difficulty means harder READING, not trick questions: all answers must still be directly findable in the source text.
+
+CRITICAL: Respond with ONLY one valid JSON object containing a single key "questions". No markdown, no prose around it. Shape:
 {
-  "question": "string - a clear question or fill-in-the-blank prompt",
-  "options": ["string", "string", "string", "string"] - exactly 4 answer choices",
-  "correctIndex": number - the 0-based index of the correct option",
-  "explanation": "string - 1-2 sentence explanation of why the answer is correct",
-  "initialDifficulty": number - ${difficulty} (match the requested difficulty)"
+  "questions": [
+    {
+      "question": "string - a clear question or fill-in-the-blank prompt",
+      "options": ["string", "string", "string", "string"] - exactly 4 answer choices",
+      "correctIndex": number - the 0-based index of the correct option",
+      "explanation": "string - 1-2 sentence explanation of why the answer is correct",
+      "initialDifficulty": number - ${difficulty} (match the requested difficulty)"
+    }
+  ]
 }
 Make the questions meaningful, test actual understanding, include plausible distractors, and randomize the position of the correct answer.`;
 
@@ -149,12 +188,12 @@ Make the questions meaningful, test actual understanding, include plausible dist
       messages: [
         {
           role: "system",
-          content: "You output strictly valid JSON arrays. Never include surrounding text.",
+          content: "You output strictly valid JSON objects. Never include surrounding text.",
         },
         { role: "user", content: prompt },
       ],
       response_format: { type: "json_object" },
-      temperature: 0.7,
+      temperature: 0.9,
       max_tokens: 2048,
     });
 

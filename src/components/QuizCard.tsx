@@ -62,6 +62,7 @@ export default function QuizCard() {
   const [loadingClarify, setLoadingClarify] = useState(false);
   const [fiftyActive, setFiftyActive] = useState(false);
   const [shrunk, setShrunk] = useState<Set<number>>(new Set());
+  const [powerupUsed, setPowerupUsed] = useState(false);
   const [freezeActive, setFreezeActive] = useState(false);
   const [hint, setHint] = useState<string | null>(null);
   const [hintFetched, setHintFetched] = useState(false);
@@ -93,6 +94,7 @@ export default function QuizCard() {
     setHintFetched(false);
     setFiftyActive(false);
     setShrunk(new Set());
+    setPowerupUsed(false);
     shrinkPickedRef.current = false;
     setFreezeActive(false);
   }, [q?.id]);
@@ -105,6 +107,7 @@ export default function QuizCard() {
       shrinkPickedRef.current = true;
       setShrunk(pickTwoWrong(q));
       setFiftyActive(true);
+      setPowerupUsed(true);
     }
   }, [hintStage, hintsOn, q, answered, fiftyActive, pickTwoWrong]);
 
@@ -118,6 +121,7 @@ export default function QuizCard() {
           question: q.question,
           options: q.options,
           correctIndex: q.correctIndex,
+          difficulty: state.stats.tier,
         }),
       })
         .then((r) => r.json())
@@ -142,6 +146,7 @@ export default function QuizCard() {
   ) => {
     if (inventory[name] <= 0 || answered) return;
     usePowerup(name);
+    setPowerupUsed(true);
 
     if (name === "time-extension") {
       freezeQuestionIdRef.current = q.id;
@@ -178,6 +183,7 @@ export default function QuizCard() {
     shrinkPickedRef.current = true;
     setShrunk(pickTwoWrong(q));
     setFiftyActive(true);
+    setPowerupUsed(true);
   };
 
   return (
@@ -347,12 +353,12 @@ export default function QuizCard() {
         )}
       </div>
 
-      {/* POWERUP BUTTONS */}
-      {!answered && mode === "balanced" && (
+      {/* POWERUP BUTTONS — one powerup per question */}
+      {!answered && mode === "balanced" && !powerupUsed && (
         <div className="mt-4 flex flex-wrap justify-center gap-2">
           <PowerupButton
             icon={<Zap size={14} className="text-yellow-400" />}
-            label={fiftyActive ? "Hint on" : "50/50"}
+            label="50/50"
             count={inventory["50-50"]}
             disabled={inventory["50-50"] <= 0 || fiftyActive}
             onClick={handleUseFiftyFifty}

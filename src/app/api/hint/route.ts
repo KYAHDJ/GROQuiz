@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { chatWithFallback, FAST_MODEL, parseJsonContent } from "@/lib/groq";
+import { chatWithFallback, FAST_MODEL, parseJsonContent, DIFFICULTY_READABILITY } from "@/lib/groq";
 
 export const runtime = "nodejs";
 export const maxDuration = 60;
@@ -8,6 +8,7 @@ interface HintRequest {
   question: string;
   options: string[];
   correctIndex: number;
+  difficulty?: number;
 }
 
 interface HintResponse {
@@ -35,16 +36,34 @@ export async function POST(req: Request): Promise<NextResponse> {
 
   const fallbackHint = `The answer is basically: ${answer}. Pick the option that says this in simple words.`;
 
-  const prompt = `You are a kind tutor for a complete beginner. Write ONE short clue that points clearly to the right answer, in the simplest everyday words possible (like talking to a 10-year-old). Do NOT copy the answer word-for-word — say what it means simply instead.
+  const difficulty = Math.max(1, Math.min(5, Number(body.difficulty) || 2)) as 1 | 2 | 3 | 4 | 5;
+  const readability = DIFFICULTY_READABILITY[difficulty];
+  const wordCap =
+    difficulty === 1 ? 8 : difficulty === 2 ? 12 : difficulty === 3 ? 15 : 18;
+  const style = difficulty >= 4 ? "It is OK to sound a little more clever and indirect, but keep it a real clue." : "";
+
+  const voices = [
+    "describe what the answer actually is or does, without using its exact words",
+    "contrast the right answer with the wrong ones",
+    "give a tiny real-world example that matches the answer",
+    "start with the first concept the answer involves, then nudge",
+  ];
+  const voice = voices[Math.floor(Math.random() * voices.length)];
+
+  const prompt = `You are a kind tutor who never says the same thing twice. Write ONE short fresh clue pointing to the right answer. This time, ${voice}.
+
+Wording level for this hint:
+${readability}
 
 Question: ${question}
 Answer options: ${options.map((o) => `"${o}"`).join(", ")}
 The right option is: "${answer}"
 
 Rules:
-- Max 15 words.
-- Zero jargon, zero fancy words.
-- It must make the correct choice obvious.`;
+- Max ${wordCap} words.
+- Do NOT copy the answer word-for-word — say what it means instead.
+- Phrase it freshly and differently from any hints you have ever written.
+- ${style}It must make the correct choice obvious for the chosen reading level.`;
 
   try {
     const raw = await chatWithFallback({

@@ -79,6 +79,7 @@ type QuizAction =
   | { type: "SELECT_ANSWER"; index: number }
   | { type: "CONFIRM_ANSWER" }
   | { type: "NEXT_QUESTION" }
+  | { type: "REPLACE_QUESTION"; index: number; question: FlashcardQuestion }
   | { type: "RESET_GAME" };
 
 const freshId = (prefix: string) =>
@@ -472,6 +473,27 @@ function reduce(state: QuizState, action: QuizAction): QuizState {
       return { ...state, screen: "results" };
     }
 
+    case "REPLACE_QUESTION": {
+      const idx = action.index;
+      if (
+        idx < 0 ||
+        idx >= state.questions.length ||
+        !action.question ||
+        state.results.some((r) => r.questionId === state.questions[idx]?.id)
+      ) {
+        return state;
+      }
+      return {
+        ...state,
+        questions: state.questions.map((q, i) =>
+          i === idx ? action.question : q
+        ),
+        allQuestions: state.allQuestions.map((q, i) =>
+          i === idx ? action.question : q
+        ),
+      };
+    }
+
     case "RESET_GAME":
       return {
         ...initialState,
@@ -504,6 +526,7 @@ interface QuizContextValue {
   nextQuestion: () => void;
   resetGame: () => void;
   resumeGame: () => void;
+  adaptUpcoming: () => Promise<void>;
   currentQuestion: FlashcardQuestion | null;
   hasSavedGame: boolean;
   history: HistoryRecord[];
@@ -517,6 +540,9 @@ export function QuizProvider({ children }: { children: ReactNode }) {
   const [hasSavedGame, setHasSavedGame] = useState(false);
   const [history, setHistory] = useState<HistoryRecord[]>([]);
   const recordedSessionRef = useRef<string | null>(null);
+  const stateRef = useRef(state);
+  stateRef.current = state;
+  const adaptTokenRef = useRef(0);
 
   useEffect(() => {
     setHasSavedGame(state.screen !== "landing" && state.questions.length > 0);
@@ -550,6 +576,49 @@ export function QuizProvider({ children }: { children: ReactNode }) {
 
   const value = useMemo<QuizContextValue>(() => {
     const currentQuestion = state.questions[state.currentIndex] ?? null;
+
+    const adaptUpcoming: () => Promise<void> = async () => {
+      const s = stateRef.current;
+      if (s.mode !== "balanced" || s.retryRound || s.screen !== "quiz") return;
+      const idx = s.currentIndex + 1;
+      if (idx >= s.questions.length) return;
+
+      const avoid = s.allQuestions
+        .map((q, i) =>
+          i === idx
+            ? ""
+            : `Question ${i + 1}: ${q.question} | Correct answer: ${q.options[q.correctIndex]}`
+        )
+        .filter(Boolean);
+
+      const token = ++adaptTokenRef.current;
+      try {
+        const res = await fetch("/api/regenerate-question", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            text: s.currentText,
+            topics: s.currentTopics,
+            difficulty: s.stats.tier,
+            avoid,
+          }),
+        });
+        const data = await res.json();
+        if (
+          token !== adaptTokenRef.current ||
+          !data.question ||
+          typeof data.question.question !== "string"
+        ) {
+          return;
+        }
+        const cur = stateRef.current;
+        if (cur.retryRound || cur.currentIndex + 1 !== idx) return;
+        dispatch({ type: "REPLACE_QUESTION", index: idx, question: data.question });
+      } catch {
+        // keep the batch question as-is
+      }
+    };
+
     return {
       state,
       setSource: (text, topics) => dispatch({ type: "SET_SOURCE", text, topics }),
@@ -573,6 +642,7 @@ export function QuizProvider({ children }: { children: ReactNode }) {
           dispatch({ type: "SET_SCREEN", screen: save.screen });
         }
       },
+      adaptUpcoming,
       currentQuestion,
       hasSavedGame,
       history,

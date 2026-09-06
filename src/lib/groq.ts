@@ -3,6 +3,14 @@ import Groq from "groq-sdk";
 export const DEFAULT_MODEL = "openai/gpt-oss-120b";
 export const FAST_MODEL = "openai/gpt-oss-20b";
 
+export const DIFFICULTY_READABILITY: Record<number, string> = {
+  1: "Beginner (age ~7): baby-simple words, very short sentences (under 12 words), one single idea per question. A small child understands it with no help.",
+  2: "Easy (age ~10): simple everyday words, short clear sentences, plain structure. A kid can read it easily.",
+  3: "Medium (teen/adult): normal everyday wording and vocabulary, standard textbook sentences. Comfortable, natural reading.",
+  4: "Hard (advanced high school/college): noticeably harder to read — longer sentences, more complex grammar, some advanced vocabulary — but every fact is STILL directly in the source material. The difficulty comes from understanding the wording, never from tricky or unfair logic.",
+  5: "Expert (graduate): dense, academic-sounding wording with long multi-clause sentences and specialist vocabulary — still fully answerable from the source text. The extra difficulty is purely reading comprehension, not trickery.",
+};
+
 const clientCache = new Map<string, Groq>();
 
 export function apiKeys(): string[] {
