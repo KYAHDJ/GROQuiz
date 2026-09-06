@@ -7,9 +7,9 @@ import {
   onAuthStateChanged,
   signInWithEmailAndPassword,
   createUserWithEmailAndPassword,
-  signOut as firebaseSignOut,
-  GoogleAuthProvider,
   signInWithPopup,
+  GoogleAuthProvider,
+  signOut as firebaseSignOut,
   type User,
 } from "firebase/auth";
 import {
@@ -136,9 +136,11 @@ export function signUpEmail(email: string, password: string): Promise<void> {
   return createUserWithEmailAndPassword(client.auth, email, password).then(() => {});
 }
 
-export function signInWithGoogle(): Promise<void> {
+export function signInGoogle(): Promise<void> {
   if (!client) return Promise.reject(new Error("Firebase is unavailable"));
-  return signInWithPopup(client.auth, new GoogleAuthProvider()).then(() => {});
+  const provider = new GoogleAuthProvider();
+  provider.setCustomParameters({ prompt: "select_account" });
+  return signInWithPopup(client.auth, provider).then(() => {});
 }
 
 export async function signOutFb(): Promise<void> {

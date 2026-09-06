@@ -6,8 +6,8 @@ import {
   onFirebaseUser,
   signInEmail,
   signUpEmail,
+  signInGoogle,
   signOutFb,
-  signInWithGoogle,
   type FbUser,
 } from "@/lib/firebase/client";
 
@@ -20,10 +20,12 @@ function friendlyError(err: unknown): string {
   if (msg.includes("weak-password")) return "Password is too weak — use at least 6 characters.";
   if (msg.includes("too-many-requests")) return "Too many attempts. Wait a minute, then try again.";
   if (msg.includes("network-request-failed")) return "No internet connection. Try again.";
-  if (msg.includes("popup-closed-by-user") || msg.includes("cancelled-popup-request"))
-    return "Sign-in window closed before finishing. Try again.";
-  if (msg.includes("popup-blocked")) return "Your browser blocked the Google window. Allow popups for this site, then try again.";
-  if (msg.includes("unauthorized-domain")) return "The Google sign-in domain isn't approved yet. Add groquiz.vercel.app in the Firebase console under Authentication → Settings → Authorized domains.";
+  if (msg.includes("operation-not-allowed") || msg.includes("configuration-not-found")) {
+    return "Google sign-in isn't enabled in the Firebase console yet.";
+  }
+  if (msg.includes("popup-closed-by-user") || msg.includes("cancelled-popup-request")) {
+    return "";
+  }
   return "That didn't work. Please try again.";
 }
 
@@ -76,14 +78,15 @@ export default function AuthModal({
     }
   };
 
-  const signInGoogle = async () => {
+  const google = async () => {
     setBusy(true);
     setError(null);
     try {
-      await signInWithGoogle();
+      await signInGoogle();
       onClose();
     } catch (err) {
-      setError(friendlyError(err));
+      const msg = friendlyError(err);
+      if (msg) setError(msg);
       setBusy(false);
     }
   };
@@ -136,8 +139,29 @@ export default function AuthModal({
           <div className="space-y-4">
             <p className="text-sm text-[#B8A9C8] leading-relaxed">
               You're signed in anonymously, so your quizzes stay on this
-              device. Create a free account to see them on any device.
+              device. Sign in to see them on any device.
             </p>
+
+            <button
+              type="button"
+              onClick={() => void google()}
+              disabled={busy}
+              className="w-full flex items-center justify-center gap-2.5 py-2.5 rounded-xl border border-[#3A2E50] bg-white text-[#1c1c1c] text-sm font-semibold hover:bg-[#f3f3f3] transition-all disabled:opacity-60"
+            >
+              <svg width="16" height="16" viewBox="0 0 18 18" aria-hidden="true">
+                <path fill="#4285F4" d="M17.64 9.2c0-.637-.057-1.251-.164-1.84H9v3.481h4.844a4.14 4.14 0 0 1-1.796 2.716v2.259h2.908c1.702-1.567 2.684-3.875 2.684-6.615Z" />
+                <path fill="#34A853" d="M9 18c2.43 0 4.467-.806 5.956-2.18l-2.908-2.26c-.806.54-1.837.86-3.048.86-2.344 0-4.328-1.584-5.036-3.711H.957v2.332A8.997 8.997 0 0 0 9 18Z" />
+                <path fill="#FBBC05" d="M3.964 10.71A5.41 5.41 0 0 1 3.682 9c0-.595.102-1.172.282-1.71V4.958H.957A8.996 8.996 0 0 0 0 9c0 1.452.348 2.827.957 4.042l3.007-2.332Z" />
+                <path fill="#EA4335" d="M9 3.58c1.321 0 2.508.454 3.44 1.345l2.582-2.58C13.463.891 11.426 0 9 0A8.997 8.997 0 0 0 .957 4.958L3.964 7.29C4.672 5.163 6.656 3.58 9 3.58Z" />
+              </svg>
+              Continue with Google
+            </button>
+
+            <div className="flex items-center gap-3">
+              <div className="flex-1 h-px bg-[#3A2E50]" />
+              <span className="text-xs text-[#8D7FA0]">or</span>
+              <div className="flex-1 h-px bg-[#3A2E50]" />
+            </div>
 
             <div className="flex gap-1 bg-[#151021] rounded-xl p-1 border border-[#3A2E50]">
               <button
@@ -162,39 +186,6 @@ export default function AuthModal({
               >
                 Create account
               </button>
-            </div>
-
-            <button
-              type="button"
-              onClick={() => void signInGoogle()}
-              disabled={busy}
-              className="w-full flex items-center justify-center gap-2.5 py-2.5 rounded-xl border border-[#3A2E50] bg-[#151021] text-sm font-semibold text-[#F0EAF6] hover:border-fuchsia-400/50 transition-all disabled:opacity-60"
-            >
-              <svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true">
-                <path
-                  fill="#4285F4"
-                  d="M23.5 12.27c0-.79-.07-1.54-.2-2.27H12v4.51h6.46a5.52 5.52 0 0 1-2.4 3.62v3h3.87c2.27-2.09 3.57-5.17 3.57-8.86Z"
-                />
-                <path
-                  fill="#34A853"
-                  d="M12 24a11.44 11.44 0 0 0 7.93-2.87l-3.87-3c-1.08.72-2.47 1.15-4.06 1.15-3.12 0-5.76-2.1-6.7-4.94H1.28v3.09A12 12 0 0 0 12 24Z"
-                />
-                <path
-                  fill="#FBBC05"
-                  d="M5.3 14.34a7.2 7.2 0 0 1 0-4.68V6.57H1.28a12 12 0 0 0 0 10.86l4.02-3.09Z"
-                />
-                <path
-                  fill="#EA4335"
-                  d="M12 4.72c1.94 0 3.68.67 5.05 1.98l3.55-3.55A11.44 11.44 0 0 0 12 0 12 12 0 0 0 1.28 6.57l4.02 3.09C6.24 6.82 8.88 4.72 12 4.72Z"
-                />
-              </svg>
-              Continue with Google
-            </button>
-
-            <div className="flex items-center gap-3">
-              <div className="flex-1 h-px bg-[#3A2E50]" />
-              <span className="text-xs text-[#8D7FA0]">or use email</span>
-              <div className="flex-1 h-px bg-[#3A2E50]" />
             </div>
 
             <input

@@ -73,12 +73,11 @@ export default function PdfUpload({
   const {
     setSource,
     loadQuestions,
+    resumeRecord,
     setScreen,
     setMode,
     setTimeLimit,
     state,
-    hasSavedGame,
-    resumeGame,
     history,
     deleteHistory,
   } = useQuiz();
@@ -151,12 +150,25 @@ export default function PdfUpload({
       setError("Paste some text first — that's what the questions come from.");
       return;
     }
-    promptName((name) => void startQuestionsFromText(pastedText, name));
+    const fallback = topics.trim() || "Pasted text";
+    promptName(
+      (name) => void startQuestionsFromText(pastedText, name || fallback),
+      fallback
+    );
   };
 
-  const promptName = (opener: (name: string) => void) => {
+  const queueDefaultName = () =>
+    pdfQueue
+      .map((q) => q.name.replace(/\.pdf$/i, "").trim())
+      .filter(Boolean)
+      .join(" · ");
+
+  const promptName = (
+    opener: (name: string) => void | Promise<void>,
+    prefill?: string
+  ) => {
     pendingStartRef.current = opener;
-    setNameInitial(topics);
+    setNameInitial(prefill ?? topics);
     setQuizNameOpen(true);
   };
 
@@ -221,7 +233,7 @@ export default function PdfUpload({
       return;
     }
     setError(null);
-    const name = (quizName ?? topics).trim();
+    const name = (quizName ?? topics).trim() || "Provided material";
 
     try {
       const blocks = splitBlocks(text, 7000);
@@ -360,8 +372,10 @@ export default function PdfUpload({
 
   const generateFromQueue = () => {
     if (active) return;
+    const defaultName = queueDefaultName();
     const firebaseFiles = pdfQueue.filter((q) => q.status === "ready" && q.url);
     const textFiles = pdfQueue.filter((q) => q.status === "ready" && q.text);
+    const prefill = defaultName || topics.trim() || "Provided material";
     let opener: (name: string) => void | Promise<void>;
     if (firebaseFiles.length > 0) {
       opener = async (name) => {
@@ -369,7 +383,7 @@ export default function PdfUpload({
         try {
           const text = await extractPdfText(firebaseFiles);
           if (!text) return;
-          await startQuestionsFromText(text, name);
+          await startQuestionsFromText(text, name || prefill);
         } finally {
           if (sid) void deleteUploadSession(sid);
           setSessionId(null);
@@ -379,12 +393,12 @@ export default function PdfUpload({
       };
     } else if (textFiles.length > 0) {
       const combined = textFiles.map((q) => q.text ?? "").join("\n\n");
-      opener = (name) => startQuestionsFromText(combined, name);
+      opener = (name) => startQuestionsFromText(combined, name || prefill);
     } else {
       setError("Wait for the PDFs to finish uploading, or add a file first.");
       return;
     }
-    promptName(opener);
+    promptName(opener, prefill);
   };
 
   const addBuilderQuestion = () => {
@@ -415,20 +429,23 @@ export default function PdfUpload({
       setBuildError("Add at least 3 questions to start the quiz.");
       return;
     }
-    promptName((name) => {
-      const questions: FlashcardQuestion[] = builderItems.map((b) => ({
-        id: b.id,
-        question: b.question,
-        options: b.options,
-        correctIndex: b.correct,
-        explanation: "",
-        initialDifficulty: mode === "hard" ? 4 : 3,
-      }));
-      loadQuestions(questions, {
-        manual: true,
-        topics: name || "My custom quiz",
-      });
-    });
+    promptName(
+      (name) => {
+        const questions: FlashcardQuestion[] = builderItems.map((b) => ({
+          id: b.id,
+          question: b.question,
+          options: b.options,
+          correctIndex: b.correct,
+          explanation: "",
+          initialDifficulty: mode === "hard" ? 4 : 3,
+        }));
+        loadQuestions(questions, {
+          manual: true,
+          topics: name || topics.trim() || "My custom quiz",
+        });
+      },
+      topics.trim() || "My custom quiz"
+    );
   };
 
   const active = progress !== null;
@@ -611,22 +628,6 @@ export default function PdfUpload({
             Time out = marked wrong, then a retry at the end.
           </p>
         </div>
-
-        {hasSavedGame && state.screen === "landing" && (
-          <div className="bg-fuchsia-400/10 border border-fuchsia-400/30 rounded-2xl px-5 py-3 flex items-center justify-between gap-3">
-            <p className="text-sm text-fuchsia-300 [overflow-wrap:anywhere]">
-              You have an unfinished quiz on{" "}
-              <span className="font-semibold">{state.currentTopics || "your material"}</span>.
-            </p>
-            <button
-              type="button"
-              onClick={resumeGame}
-              className="shrink-0 bg-gradient-to-r from-fuchsia-500 to-fuchsia-400 text-[#151021] font-bold text-sm rounded-xl px-4 py-2 transition-all hover:from-fuchsia-400 hover:to-fuchsia-300"
-            >
-              Resume
-            </button>
-          </div>
-        )}
 
         {error && (
           <div className="bg-red-500/10 border border-red-400/30 rounded-2xl px-4 py-3 text-sm text-red-300 flex items-start gap-2">
@@ -1036,33 +1037,49 @@ export default function PdfUpload({
                         {r.topic}
                       </p>
                       <p className="text-xs text-[#8D7FA0] mt-0.5">
-                        {r.results.length} questions · {r.points} pts ·{" "}
-                        {new Date(r.date).toLocaleDateString()}
+                        {r.unfinished
+                          ? `${r.results.length} done · ${r.questions.length} total`
+                          : `${r.results.length} questions · ${r.points} pts · ${new Date(r.date).toLocaleDateString()}`}
                       </p>
                     </div>
-                    <div className="flex items-center gap-1 shrink-0">
-                      <span
-                        className={`px-3 py-1 rounded-full text-xs font-bold mr-1 ${
-                          acc >= 85
-                            ? "bg-emerald-400/20 text-emerald-400"
-                            : acc >= 70
-                              ? "bg-amber-400/20 text-amber-400"
-                              : "bg-red-400/20 text-red-400"
-                        }`}
-                      >
-                        {acc}%
-                      </span>
+                    <div className="flex items-center gap-1.5 shrink-0">
+                      {r.unfinished ? (
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            resumeRecord(r);
+                          }}
+                          className="px-3 py-1.5 rounded-full text-xs font-bold transition-all bg-fuchsia-400 text-[#151021] hover:bg-fuchsia-300"
+                        >
+                          Continue
+                        </button>
+                      ) : (
+                        <span
+                          className={`px-3 py-1 rounded-full text-xs font-bold mr-1 ${
+                            acc >= 85
+                              ? "bg-emerald-400/20 text-emerald-400"
+                              : acc >= 70
+                                ? "bg-amber-400/20 text-amber-400"
+                                : "bg-red-400/20 text-red-400"
+                          }`}
+                        >
+                          {acc}%
+                        </span>
+                      )}
                       <button
                         type="button"
-                        aria-label="Take this quiz again"
-                        title="Take again"
+                        aria-label="Restart from beginning"
+                        title="Start over"
                         onClick={(e) => {
                           e.stopPropagation();
-                          promptName((name) =>
-                            loadQuestions(r.questions, {
-                              manual: true,
-                              topics: name || r.topic,
-                            })
+                          promptName(
+                            (name) =>
+                              loadQuestions(r.questions, {
+                                manual: true,
+                                topics: name || r.topic,
+                              }),
+                            r.topic
                           );
                         }}
                         className="w-8 h-8 flex items-center justify-center rounded-lg text-[#8D7FA0] hover:text-fuchsia-400 hover:bg-fuchsia-400/10 transition-colors"

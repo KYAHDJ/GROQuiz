@@ -9,7 +9,6 @@ import QuestionNav from "./QuestionNav";
 import QuizCard from "./QuizCard";
 import PowerupShop from "./PowerupShop";
 import ScoreDisplay from "./ScoreDisplay";
-import ConfirmModal from "./ConfirmModal";
 
 function BrandLogo({ size = 32 }: { size?: number }) {
   return (
@@ -25,11 +24,10 @@ function BrandLogo({ size = 32 }: { size?: number }) {
 }
 
 export default function GamePage() {
-  const { state, togglePause, resetGame, adaptUpcoming } = useQuiz();
+  const { state, togglePause, adaptUpcoming, exitToLanding } = useQuiz();
   const [shopOpen, setShopOpen] = useState(false);
   const [review, setReview] = useState<HistoryRecord | null>(null);
   const [pausedOpen, setPausedOpen] = useState(false);
-  const [exitOpen, setExitOpen] = useState(false);
   const adaptingRef = useRef<number | null>(null);
 
   useEffect(() => {
@@ -120,10 +118,10 @@ export default function GamePage() {
             </button>
             <button
               type="button"
-              onClick={() => setExitOpen(true)}
-              className="text-sm text-[#8D7FA0] hover:text-red-400 transition-colors"
+              onClick={exitToLanding}
+              className="text-sm text-[#8D7FA0] hover:text-fuchsia-300 transition-colors"
             >
-              Exit quiz
+              Exit to Home
             </button>
           </div>
         </div>
@@ -241,15 +239,6 @@ export default function GamePage() {
         <Star size={10} className="text-violet-500" />
         GROQuiz
       </footer>
-
-      <ConfirmModal
-        open={exitOpen}
-        title="Exit this quiz?"
-        message="Your progress will be cleared — you can start a new one anytime."
-        confirmLabel="Exit Quiz"
-        onConfirm={() => resetGame()}
-        onCancel={() => setExitOpen(false)}
-      />
 
       <PowerupShop open={shopOpen} onClose={() => setShopOpen(false)} />
     </div>

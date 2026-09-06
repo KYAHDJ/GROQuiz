@@ -67,6 +67,18 @@ export interface HistoryRecord {
   results: QuestionResult[];
   questions: FlashcardQuestion[];
   points: number;
+  sourceText?: string;
+  unfinished?: boolean;
+  progress?: {
+    currentIndex: number;
+    retryIds: string[];
+    retryRound: boolean;
+    timeLimit: number;
+    mode: QuizMode;
+    isManual: boolean;
+    elapsedByQuestion: Record<string, number>;
+    currentText: string;
+  };
 }
 
 export interface SavedGame {

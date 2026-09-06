@@ -16,8 +16,6 @@ import {
   saveHistoryToFirebase,
   loadHistoryFromFirebase,
   deleteHistoryFromFirebase,
-  saveGameToFirebase,
-  loadGameFromFirebase,
   onFirebaseUser,
   type FbUser,
 } from "@/lib/firebase/client";
@@ -79,7 +77,14 @@ interface QuizState {
 
 type QuizAction =
   | { type: "SET_SOURCE"; text: string; topics: string }
-  | { type: "LOAD_QUESTIONS"; questions: FlashcardQuestion[]; manual?: boolean; topics?: string }
+  | {
+      type: "LOAD_QUESTIONS";
+      questions: FlashcardQuestion[];
+      manual?: boolean;
+      topics?: string;
+      sessionId?: string;
+    }
+  | { type: "RESUME_RECORD"; record: HistoryRecord }
   | { type: "SET_SCREEN"; screen: Screen }
   | { type: "SET_MODE"; mode: QuizMode }
   | { type: "SET_TIME_LIMIT"; seconds: number }
@@ -284,8 +289,47 @@ function reduce(state: QuizState, action: QuizAction): QuizState {
         currentTopics: action.topics ?? state.currentTopics,
         screen: "quiz",
         results: [],
-        sessionId: freshId("sess"),
+        sessionId: action.sessionId ?? freshId("sess"),
       };
+
+    case "RESUME_RECORD": {
+      const rec = action.record;
+      const progress = rec.progress;
+      const mode: QuizMode = progress?.mode ? progress.mode : state.mode;
+      const idx = Math.min(
+        Math.max(progress?.currentIndex ?? 0, 0),
+        Math.max(rec.questions.length - 1, 0)
+      );
+      const activeResumes = rec.results?.some(
+        (r) => r.questionId === rec.questions[idx]?.id
+      );
+      return {
+        ...state,
+        mode,
+        questions: rec.questions,
+        allQuestions: rec.questions,
+        currentIndex: idx,
+        isFlipped: Boolean(activeResumes),
+        selected: null,
+        answered: Boolean(activeResumes),
+        hintStage: 0,
+        timerPaused: false,
+        elapsed: 0,
+        elapsedByQuestion: progress?.elapsedByQuestion ?? {},
+        retryIds: progress?.retryIds ?? [],
+        retryRound: progress?.retryRound ?? false,
+        fiftyFiftyUsed: false,
+        isManual: progress?.isManual ?? false,
+        currentText: progress?.currentText ?? "",
+        currentTopics: rec.topic,
+        screen: "quiz",
+        results: rec.results ?? [],
+        stats: rec.stats ?? defaultStats(mode),
+        timeLimit:
+          progress?.timeLimit ?? (mode === "hard" ? 30 : state.timeLimit),
+        sessionId: rec.id,
+      };
+    }
 
     case "SET_MODE":
       return {
@@ -587,6 +631,8 @@ interface QuizContextValue {
     questions: FlashcardQuestion[],
     opts?: { manual?: boolean; topics?: string }
   ) => void;
+  resumeRecord: (record: HistoryRecord) => void;
+  exitToLanding: () => void;
   setScreen: (screen: Screen) => void;
   setMode: (mode: QuizMode) => void;
   setTimeLimit: (seconds: number) => void;
@@ -601,12 +647,10 @@ interface QuizContextValue {
   nextQuestion: () => void;
   resetGame: () => void;
   restartQuiz: () => void;
-  resumeGame: () => void;
   adaptUpcoming: () => Promise<void>;
   hintCache: Readonly<Record<string, string>>;
   requestHint: (question: FlashcardQuestion, difficulty: number) => void;
   currentQuestion: FlashcardQuestion | null;
-  hasSavedGame: boolean;
   history: HistoryRecord[];
   deleteHistory: (id: string) => void;
   clearHistory: () => void;
@@ -616,52 +660,77 @@ const QuizContext = createContext<QuizContextValue | null>(null);
 
 export function QuizProvider({ children }: { children: ReactNode }) {
   const [state, dispatch] = useReducer(reduce, initialState, loadSave);
-  const [hasSavedGame, setHasSavedGame] = useState(false);
   const [history, setHistory] = useState<HistoryRecord[]>([]);
   const recordedSessionRef = useRef<string | null>(null);
   const stateRef = useRef(state);
   stateRef.current = state;
-  const lastSavedSigRef = useRef<string>("");
-  const hadSavedRef = useRef(false);
+  const historyRef = useRef<HistoryRecord[]>([]);
+  historyRef.current = history;
   const adaptTokenRef = useRef(0);
   const [hintCache, setHintCache] = useState<Record<string, string>>({});
   const hintCacheRef = useRef<Record<string, string>>({});
   hintCacheRef.current = hintCache;
   const hintPendingRef = useRef<Set<string>>(new Set());
 
-  useEffect(() => {
-    let restored = false;
-    try {
-      const raw = localStorage.getItem(SAVE_KEY);
-      restored = Boolean(raw && (JSON.parse(raw) as SavedGame)?.questions?.length);
-    } catch {
-      restored = false;
+  const upsertRecord = useCallback((record: HistoryRecord) => {
+    const records = persistHistory(record);
+    historyRef.current = records;
+    setHistory(records);
+    if (IS_FIREBASE_ENABLED) void saveHistoryToFirebase(records);
+  }, []);
+
+  const upsertRecordRef = useRef(upsertRecord);
+  upsertRecordRef.current = upsertRecord;
+
+  const buildProgressRecord = useCallback((s: QuizState): HistoryRecord | null => {
+    if (!s.sessionId) return null;
+    let rec = historyRef.current.find((r) => r.id === s.sessionId);
+    if (!rec) {
+      rec = {
+        id: s.sessionId,
+        topic: s.currentTopics || "Untitled quiz",
+        date: Date.now(),
+        stats: defaultStats(s.mode),
+        results: [],
+        questions: s.allQuestions,
+        points: 0,
+        sourceText: s.currentText.slice(0, 6000),
+      };
     }
-    setHasSavedGame(state.questions.length > 0 || restored);
-    const saved = persistSave(state);
-    if (!IS_FIREBASE_ENABLED) return;
-    let cancelled = false;
-    const sig = saved
-      ? `${state.sessionId}|${state.currentIndex}|${state.results.length}|${state.stats.points}|${state.screen}`
-      : "";
-    const timer = setTimeout(() => {
-      if (cancelled) return;
-      if (saved) {
-        if (sig === lastSavedSigRef.current) return;
-        lastSavedSigRef.current = sig;
-        hadSavedRef.current = true;
-        void saveGameToFirebase(saved);
-      } else if (hadSavedRef.current && lastSavedSigRef.current) {
-        lastSavedSigRef.current = "";
-        hadSavedRef.current = false;
-        void saveGameToFirebase(null);
-      }
-    }, 900);
-    return () => {
-      cancelled = true;
-      clearTimeout(timer);
+    return {
+      ...rec,
+      unfinished: true,
+      results: s.results,
+      stats: s.stats,
+      points: s.results.reduce((a, r) => a + r.pointsEarned, 0),
+      sourceText: (rec.sourceText || s.currentText).slice(0, 6000),
+      progress: {
+        currentIndex: s.currentIndex,
+        retryIds: s.retryIds,
+        retryRound: s.retryRound,
+        timeLimit: s.timeLimit,
+        mode: s.mode,
+        isManual: s.isManual,
+        elapsedByQuestion: s.elapsedByQuestion,
+        currentText: s.currentText.slice(0, 4000),
+      },
     };
+  }, []);
+
+  useEffect(() => {
+    persistSave(stateRef.current);
   }, [state]);
+
+  useEffect(() => {
+    if (state.screen !== "quiz" || !state.sessionId) return;
+    const id = setInterval(() => {
+      const s = stateRef.current;
+      if (s.screen !== "quiz") return;
+      const rec = buildProgressRecord(s);
+      if (rec) upsertRecordRef.current(rec);
+    }, 2000);
+    return () => clearInterval(id);
+  }, [state.screen, state.sessionId, buildProgressRecord]);
 
   useEffect(() => {
     setHistory(loadHistory());
@@ -682,10 +751,7 @@ export function QuizProvider({ children }: { children: ReactNode }) {
     let cancelled = false;
     (async () => {
       try {
-        const [remoteHistory, remoteSave] = await Promise.all([
-          loadHistoryFromFirebase(),
-          loadGameFromFirebase(),
-        ]);
+        const remoteHistory = await loadHistoryFromFirebase();
         if (cancelled) return;
         const local = loadHistory();
         let merged: HistoryRecord[] | null = null;
@@ -693,19 +759,9 @@ export function QuizProvider({ children }: { children: ReactNode }) {
         else if (local.length > 0) merged = local;
         if (merged) {
           setHistory(merged);
+          historyRef.current = merged;
           if (remoteHistory && remoteHistory.length === 0) {
             void saveHistoryToFirebase(merged);
-          }
-        }
-        if (remoteSave && Array.isArray(remoteSave.questions) && remoteSave.questions.length > 0) {
-          const cur = stateRef.current;
-          if (cur.screen === "landing" && cur.questions.length === 0) {
-            try {
-              localStorage.setItem(SAVE_KEY, JSON.stringify(remoteSave));
-            } catch {
-              // ignore storage errors
-            }
-            setHasSavedGame(true);
           }
         }
       } catch {
@@ -725,19 +781,27 @@ export function QuizProvider({ children }: { children: ReactNode }) {
       recordedSessionRef.current !== state.sessionId
     ) {
       recordedSessionRef.current = state.sessionId;
-      const records = persistHistory({
-        id: state.sessionId,
-        topic: state.currentTopics || "Imported material",
-        date: Date.now(),
-        stats: state.stats,
+      const points = state.results.reduce((a, r) => a + r.pointsEarned, 0);
+      const existing = historyRef.current.find((r) => r.id === state.sessionId);
+      upsertRecordRef.current({
+        ...(existing ?? {
+          id: state.sessionId,
+          topic: state.currentTopics || "Imported material",
+          date: Date.now(),
+          stats: defaultStats(state.mode),
+          results: [],
+          questions: state.allQuestions,
+          points: 0,
+        }),
+        unfinished: false,
+        progress: undefined,
         results: state.results,
-        questions: state.allQuestions,
-        points: state.results.reduce((a, r) => a + r.pointsEarned, 0),
+        stats: state.stats,
+        points,
+        sourceText: existing?.sourceText ?? state.currentText.slice(0, 6000),
       });
-      setHistory(records);
-      if (IS_FIREBASE_ENABLED) void saveHistoryToFirebase(records);
     }
-  }, [state.screen, state.sessionId, state.results, state.stats, state.allQuestions, state.currentTopics]);
+  }, [state.screen, state.sessionId, state.results, state.stats, state.allQuestions, state.currentTopics, state.currentText]);
 
   const requestHint = useCallback(
     async (question: FlashcardQuestion, difficulty: number) => {
@@ -848,13 +912,38 @@ export function QuizProvider({ children }: { children: ReactNode }) {
     return {
       state,
       setSource: (text, topics) => dispatch({ type: "SET_SOURCE", text, topics }),
-      loadQuestions: (questions, opts) =>
+      loadQuestions: (questions, opts) => {
+        const topics = opts?.topics?.trim();
+        const s = stateRef.current;
+        const sessionId = freshId("sess");
         dispatch({
           type: "LOAD_QUESTIONS",
           questions,
           manual: opts?.manual,
-          topics: opts?.topics,
-        }),
+          topics: topics || undefined,
+          sessionId,
+        });
+        upsertRecordRef.current({
+          id: sessionId,
+          topic: topics || "Untitled quiz",
+          date: Date.now(),
+          stats: defaultStats(s.mode),
+          results: [],
+          questions,
+          points: 0,
+          sourceText: s.currentText.slice(0, 6000),
+        });
+      },
+      resumeRecord: (record) => {
+        if (!record.questions.length) return;
+        dispatch({ type: "RESUME_RECORD", record });
+      },
+      exitToLanding: () => {
+        const s = stateRef.current;
+        const rec = buildProgressRecord(s);
+        if (rec) upsertRecordRef.current(rec);
+        dispatch({ type: "SET_SCREEN", screen: "landing" });
+      },
       setScreen: (screen) => dispatch({ type: "SET_SCREEN", screen }),
       setMode: (mode) => dispatch({ type: "SET_MODE", mode }),
       setTimeLimit: (seconds) => dispatch({ type: "SET_TIME_LIMIT", seconds }),
@@ -868,12 +957,6 @@ export function QuizProvider({ children }: { children: ReactNode }) {
       confirmAnswer: () => dispatch({ type: "CONFIRM_ANSWER" }),
       nextQuestion: () => dispatch({ type: "NEXT_QUESTION" }),
       resetGame: () => dispatch({ type: "RESET_GAME" }),
-      resumeGame: () => {
-        const save = loadSave();
-        if (save.questions.length > 0) {
-          dispatch({ type: "SET_SCREEN", screen: save.screen });
-        }
-      },
       restartQuiz: () => {
         hintPendingRef.current.clear();
         setHintCache({});
@@ -883,7 +966,6 @@ export function QuizProvider({ children }: { children: ReactNode }) {
       currentQuestion,
       hintCache,
       requestHint,
-      hasSavedGame,
       history,
       deleteHistory: (id) => {
         const next = history.filter((r) => r.id !== id);
@@ -904,7 +986,7 @@ export function QuizProvider({ children }: { children: ReactNode }) {
         if (IS_FIREBASE_ENABLED) void saveHistoryToFirebase([]);
       },
     };
-  }, [state, hasSavedGame, history, hintCache, requestHint]);
+  }, [state, history, hintCache, requestHint]);
 
   return <QuizContext.Provider value={value}>{children}</QuizContext.Provider>;
 }
