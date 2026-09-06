@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   Upload,
   FileText,
@@ -40,6 +40,16 @@ export default function PdfUpload({
     history,
   } = useQuiz();
   const fileRef = useRef<HTMLInputElement>(null);
+  const [groqCount, setGroqCount] = useState<number | null>(null);
+
+  useEffect(() => {
+    fetch("/api/status")
+      .then((r) => r.json())
+      .then((d) => {
+        if (typeof d?.availableKeys === "number") setGroqCount(d.availableKeys);
+      })
+      .catch(() => setGroqCount(0));
+  }, []);
   const [mode, setModeLocal] = useState<QuizMode>(state.mode);
   const [fileName, setFileName] = useState<string | null>(null);
   const [progress, setProgress] = useState<number | null>(null);
@@ -174,6 +184,34 @@ export default function PdfUpload({
 
   return (
     <div className="w-full max-w-2xl mx-auto space-y-4">
+      {/* Groq status */}
+      <div className="flex items-center justify-center">
+        <span
+          className={`inline-flex items-center gap-2 rounded-full px-3 py-1.5 text-xs font-medium border ${
+            groqCount === null
+              ? "border-slate-700 text-slate-500"
+              : groqCount > 0
+                ? "border-emerald-500/30 bg-emerald-500/10 text-emerald-300"
+                : "border-red-500/30 bg-red-500/10 text-red-300"
+          }`}
+        >
+          <span
+            className={`w-2 h-2 rounded-full ${
+              groqCount === null
+                ? "bg-slate-500"
+                : groqCount > 0
+                  ? "bg-emerald-400 animate-pulse"
+                  : "bg-red-400"
+            }`}
+          />
+          {groqCount === null
+            ? "Checking AI keys…"
+            : groqCount > 0
+              ? `Groq ready — ${groqCount} key${groqCount === 1 ? "" : "s"} connected`
+              : "Groq not connected — add GROQ_API_KEY to start"}
+        </span>
+      </div>
+
       {/* Mode selector */}
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
         <button

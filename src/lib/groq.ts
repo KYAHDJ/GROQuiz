@@ -13,6 +13,11 @@ export const DIFFICULTY_READABILITY: Record<number, string> = {
 
 const clientCache = new Map<string, Groq>();
 
+/**
+ * Finds every configured GROQ key, no matter how many are added later:
+ * GROQ_API_KEY, then GROQ_API_KEY_1, GROQ_API_KEY_2, … up to the first
+ * missing slot (so there is no upper bound to adjust when new keys appear).
+ */
 export function apiKeys(): string[] {
   const keys: string[] = [];
   const push = (v: unknown) => {
@@ -20,8 +25,23 @@ export function apiKeys(): string[] {
   };
   push(process.env.GROQ_API_KEY);
   push(process.env.GROQ_API_KEY_1);
-  for (let i = 2; i <= 6; i++) push(process.env[`GROQ_API_KEY_${i}`]);
+  for (let i = 2; i <= 50; i++) {
+    const next = process.env[`GROQ_API_KEY_${i}`];
+    if (!next) break;
+    push(next);
+  }
   return keys;
+}
+
+export function keyNames(): string[] {
+  const names: string[] = [];
+  if (process.env.GROQ_API_KEY) names.push("GROQ_API_KEY");
+  if (process.env.GROQ_API_KEY_1) names.push("GROQ_API_KEY_1");
+  for (let i = 2; i <= 50; i++) {
+    if (!process.env[`GROQ_API_KEY_${i}`]) break;
+    names.push(`GROQ_API_KEY_${i}`);
+  }
+  return names;
 }
 
 export function getGroqClient(): Groq {
