@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { getGroqClient, FAST_MODEL } from "@/lib/groq";
+import { chatWithFallback, FAST_MODEL, parseJsonContent } from "@/lib/groq";
 import type { ClarifyResponse } from "@/lib/types";
 
 export const runtime = "nodejs";
@@ -26,12 +26,7 @@ export async function POST(req: Request): Promise<NextResponse> {
   const fallbackAnalogy = `Think of "${question.slice(0, 60)}…" like a recipe: every step builds on the one before it. Break it into parts and tackle each piece one at a time.`;
 
   try {
-    if (!process.env.GROQ_API_KEY) {
-      return NextResponse.json({ analogy: fallbackAnalogy } satisfies ClarifyResponse, { status: 200 });
-    }
-
-    const client = getGroqClient();
-    const completion = await client.chat.completions.create({
+    const raw = await chatWithFallback({
       model: FAST_MODEL,
       messages: [
         {
@@ -49,17 +44,13 @@ export async function POST(req: Request): Promise<NextResponse> {
       max_tokens: 800,
     });
 
-    const raw = completion.choices[0]?.message?.content ?? "";
-    let analogy = fallbackAnalogy;
-
-    try {
-      const parsed = JSON.parse(raw.replace(/^```(?:json)?\s*/i, "").replace(/```\s*$/, "")) as Record<string, unknown>;
-      if (typeof parsed.analogy === "string" && parsed.analogy.trim().length > 0) {
-        analogy = parsed.analogy.trim();
-      }
-    } catch {
-      analogy = raw.trim() || fallbackAnalogy;
-    }
+    const parsed = parseJsonContent(raw);
+    const analogy =
+      typeof parsed !== "string" && typeof parsed.analogy === "string" && parsed.analogy.trim()
+        ? parsed.analogy.trim()
+        : typeof parsed === "string" && parsed.trim()
+          ? parsed.trim()
+          : fallbackAnalogy;
 
     return NextResponse.json({ analogy } satisfies ClarifyResponse, { status: 200 });
   } catch (err) {

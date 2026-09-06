@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { getGroqClient, FAST_MODEL } from "@/lib/groq";
+import { chatWithFallback, FAST_MODEL, parseJsonContent } from "@/lib/groq";
 
 export const runtime = "nodejs";
 export const maxDuration = 60;
@@ -28,35 +28,32 @@ export async function POST(req: Request): Promise<NextResponse> {
 
   if (!question || !answer) {
     const hint = answer
-      ? `Look for the answer that matches: "${answer}".`
+      ? `Look for the option that matches: "${answer}".`
       : "Read the question carefully and pick the most precise option.";
     return NextResponse.json({ hint } satisfies HintResponse, { status: 200 });
   }
 
-  const fallbackHint = answer
-    ? `The answer is related to "${answer}". Read the choices again — this option says it best.`
-    : "";
+  const fallbackHint = `The answer is basically: ${answer}. Pick the option that says this in simple words.`;
 
-  const prompt = `You are a friendly tutor giving a REALLY easy hint. Do not spell out the answer literally as a full sentence, but make it obvious by describing the answer concept in simple words any beginner understands.
+  const prompt = `You are a kind tutor for a complete beginner. Write ONE short clue that points clearly to the right answer, in the simplest everyday words possible (like talking to a 10-year-old). Do NOT copy the answer word-for-word — say what it means simply instead.
 
 Question: ${question}
 Answer options: ${options.map((o) => `"${o}"`).join(", ")}
+The right option is: "${answer}"
 
-Write ONE short, plain-words clue (under 30 words) that clearly points to the correct answer (which mentions: "${answer}") so a beginner can confidently pick it.`;
+Rules:
+- Max 15 words.
+- Zero jargon, zero fancy words.
+- It must make the correct choice obvious.`;
 
   try {
-    if (!process.env.GROQ_API_KEY) {
-      return NextResponse.json({ hint: fallbackHint } satisfies HintResponse, { status: 200 });
-    }
-
-    const client = getGroqClient();
-    const completion = await client.chat.completions.create({
+    const raw = await chatWithFallback({
       model: FAST_MODEL,
       messages: [
         {
           role: "system",
           content:
-            "You write short, simple, beginner-friendly hints. Respond with ONLY a JSON object: {\"hint\": \"string\"}. Keep it under 30 words.",
+            "You write extremely simple, beginner-friendly clues. Respond with ONLY a JSON object: {\"hint\": \"string\"}.",
         },
         { role: "user", content: prompt },
       ],
@@ -65,16 +62,11 @@ Write ONE short, plain-words clue (under 30 words) that clearly points to the co
       max_tokens: 800,
     });
 
-    const raw = completion.choices[0]?.message?.content ?? "";
-    let hint = fallbackHint;
-    try {
-      const parsed = JSON.parse(raw.replace(/^```(?:json)?\s*/i, "").replace(/```\s*$/, "")) as Record<string, unknown>;
-      if (typeof parsed.hint === "string" && parsed.hint.trim().length > 0) {
-        hint = parsed.hint.trim();
-      }
-    } catch {
-      hint = raw.trim() || fallbackHint;
-    }
+    const parsed = parseJsonContent(raw);
+    const hint =
+      typeof parsed === "object" && typeof parsed.hint === "string" && parsed.hint.trim()
+        ? parsed.hint.trim()
+        : fallbackHint;
 
     return NextResponse.json({ hint } satisfies HintResponse, { status: 200 });
   } catch (err) {

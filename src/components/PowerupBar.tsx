@@ -12,7 +12,7 @@ import {
 
 export default function PowerupBar() {
   const { state } = useQuiz();
-  const { stats, inventory } = state;
+  const { stats, inventory, mode } = state;
   const accuracy = stats.answered
     ? Math.round((stats.correct / stats.answered) * 100)
     : 0;
@@ -46,7 +46,12 @@ export default function PowerupBar() {
 
         <div className="flex-1" />
 
-        <div className="flex items-center gap-2.5">
+        {mode === "hard" ? (
+          <span className="text-[11px] font-semibold text-red-400 whitespace-nowrap">
+            Hard — no power-ups
+          </span>
+        ) : (
+          <div className="flex items-center gap-2.5">
           <PowerupBadge
             icon={<Zap size={13} className="text-yellow-300" />}
             count={inventory["50-50"]}
@@ -66,6 +71,7 @@ export default function PowerupBar() {
             color="violet"
           />
         </div>
+        )}
       </div>
     </div>
   );

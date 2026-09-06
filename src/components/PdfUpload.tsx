@@ -1,9 +1,23 @@
 "use client";
 
 import { useRef, useState } from "react";
-import { Upload, FileText, Loader2, History, ChevronRight, ClipboardPaste, X } from "lucide-react";
+import {
+  Upload,
+  FileText,
+  Loader2,
+  History,
+  ChevronRight,
+  ClipboardPaste,
+  X,
+  Scale,
+  Lock,
+} from "lucide-react";
 import { useQuiz } from "@/context/QuizContext";
-import type { FlashcardQuestion, HistoryRecord } from "@/lib/types";
+import type {
+  FlashcardQuestion,
+  HistoryRecord,
+  QuizMode,
+} from "@/lib/types";
 
 const MAX_PDF_MB = 4;
 
@@ -12,9 +26,18 @@ export default function PdfUpload({
 }: {
   onReview?: (record: HistoryRecord) => void;
 }) {
-  const { setSource, loadQuestions, setScreen, state, hasSavedGame, resumeGame, history } =
-    useQuiz();
+  const {
+    setSource,
+    loadQuestions,
+    setScreen,
+    setMode,
+    state,
+    hasSavedGame,
+    resumeGame,
+    history,
+  } = useQuiz();
   const fileRef = useRef<HTMLInputElement>(null);
+  const [mode, setModeLocal] = useState<QuizMode>(state.mode);
   const [fileName, setFileName] = useState<string | null>(null);
   const [progress, setProgress] = useState<number | null>(null);
   const [progressLabel, setProgressLabel] = useState("");
@@ -40,7 +63,11 @@ export default function PdfUpload({
       const genRes = await fetch("/api/generate-questions", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ text, topics }),
+        body: JSON.stringify({
+          text,
+          topics,
+          difficulty: mode === "hard" ? 4 : 3,
+        }),
       });
       const genData = await genRes.json();
 
@@ -140,6 +167,50 @@ export default function PdfUpload({
 
   return (
     <div className="w-full max-w-2xl mx-auto space-y-4">
+      {/* Mode selector */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+        <button
+          type="button"
+          onClick={() => {
+            setModeLocal("balanced");
+            setMode("balanced");
+          }}
+          className={`rounded-2xl border p-4 text-left transition-all ${
+            mode === "balanced"
+              ? "border-cyan-500/60 bg-cyan-500/10 ring-1 ring-cyan-500/40"
+              : "border-slate-700 bg-slate-800/40 hover:bg-slate-700/40"
+          }`}
+        >
+          <span className="flex items-center gap-2 text-sm font-semibold text-slate-100">
+            <Scale size={15} className="text-cyan-400" />
+            Balanced mode
+          </span>
+          <span className="block text-xs text-slate-400 mt-1">
+            Starts Medium and gets Easier/Harder based on your answers.
+          </span>
+        </button>
+        <button
+          type="button"
+          onClick={() => {
+            setModeLocal("hard");
+            setMode("hard");
+          }}
+          className={`rounded-2xl border p-4 text-left transition-all ${
+            mode === "hard"
+              ? "border-red-500/60 bg-red-500/10 ring-1 ring-red-500/40"
+              : "border-slate-700 bg-slate-800/40 hover:bg-slate-700/40"
+          }`}
+        >
+          <span className="flex items-center gap-2 text-sm font-semibold text-slate-100">
+            <Lock size={15} className="text-red-400" />
+            Hard mode
+          </span>
+          <span className="block text-xs text-slate-400 mt-1">
+            Locked at Hard — no power-ups, just you and the questions.
+          </span>
+        </button>
+      </div>
+
       {hasSavedGame && state.screen === "landing" && (
         <div className="bg-cyan-500/10 border border-cyan-500/25 rounded-2xl px-4 py-3 flex items-center justify-between gap-3">
           <p className="text-sm text-cyan-200">

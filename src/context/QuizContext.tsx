@@ -18,19 +18,30 @@ import type {
   HistoryRecord,
   PowerupInventory,
   QuestionResult,
+  QuizMode,
   SavedGame,
 } from "@/lib/types";
 
 export type Screen = "landing" | "loading" | "quiz" | "results";
+export type { QuizMode };
 
 export const BASE_POINTS = 100;
 export const BATCH_SIZE = 5;
+
+export const DIFFICULTY_LABELS: Record<number, string> = {
+  1: "Beginner",
+  2: "Easy",
+  3: "Medium",
+  4: "Hard",
+  5: "Expert",
+};
 
 const SAVE_KEY = "groquiz:save:v1";
 const HISTORY_KEY = "groquiz:history:v1";
 
 interface QuizState {
   screen: Screen;
+  mode: QuizMode;
   questions: FlashcardQuestion[];
   currentIndex: number;
   isFlipped: boolean;
@@ -53,9 +64,11 @@ type QuizAction =
   | { type: "SET_SOURCE"; text: string; topics: string }
   | { type: "LOAD_QUESTIONS"; questions: FlashcardQuestion[] }
   | { type: "SET_SCREEN"; screen: Screen }
+  | { type: "SET_MODE"; mode: QuizMode }
   | { type: "START_TIMER" }
   | { type: "TICK" }
   | { type: "TOGGLE_PAUSE" }
+  | { type: "GO_TO_QUESTION"; index: number }
   | { type: "BUY_POWERUP"; name: keyof PowerupInventory; cost: number }
   | { type: "USE_POWERUP"; name: keyof PowerupInventory }
   | { type: "SELECT_ANSWER"; index: number }
@@ -68,6 +81,7 @@ const freshId = (prefix: string) =>
 
 const initialState: QuizState = {
   screen: "landing",
+  mode: "balanced",
   questions: [],
   currentIndex: 0,
   isFlipped: false,
@@ -86,6 +100,17 @@ const initialState: QuizState = {
   sessionId: "",
 };
 
+function defaultStats(mode: QuizMode): GameStats {
+  return {
+    points: 0,
+    streak: 0,
+    bestStreak: 0,
+    answered: 0,
+    correct: 0,
+    tier: mode === "hard" ? 4 : 3,
+  };
+}
+
 function loadSave(): QuizState {
   if (typeof window === "undefined") return initialState;
   try {
@@ -95,11 +120,13 @@ function loadSave(): QuizState {
     if (!Array.isArray(saved.questions) || saved.questions.length === 0) {
       return initialState;
     }
+    const mode: QuizMode = saved.mode === "hard" ? "hard" : "balanced";
     return {
       ...initialState,
+      mode,
       questions: saved.questions,
       currentIndex: saved.currentIndex ?? 0,
-      stats: saved.stats ?? initialState.stats,
+      stats: saved.stats ?? defaultStats(mode),
       inventory: saved.inventory ?? initialState.inventory,
       results: saved.results ?? [],
       currentText: saved.currentText ?? "",
@@ -136,6 +163,7 @@ function persistSave(state: QuizState): void {
     currentText: state.currentText,
     currentTopics: state.currentTopics,
     screen: state.screen === "results" ? "results" : "quiz",
+    mode: state.mode,
     savedAt: Date.now(),
   };
   localStorage.setItem(SAVE_KEY, JSON.stringify(saved));
@@ -182,7 +210,12 @@ function pointsForAnswer(result: {
 function reduce(state: QuizState, action: QuizAction): QuizState {
   switch (action.type) {
     case "SET_SOURCE":
-      return { ...state, currentText: action.text, currentTopics: action.topics, screen: "loading" };
+      return {
+        ...state,
+        currentText: action.text,
+        currentTopics: action.topics,
+        screen: "loading",
+      };
 
     case "LOAD_QUESTIONS":
       return {
@@ -201,11 +234,30 @@ function reduce(state: QuizState, action: QuizAction): QuizState {
         sessionId: freshId("sess"),
       };
 
+    case "SET_MODE":
+      return {
+        ...state,
+        mode: action.mode,
+        stats: {
+          ...state.stats,
+          tier: action.mode === "hard" ? 4 : 3,
+        },
+      };
+
     case "SET_SCREEN":
       return { ...state, screen: action.screen };
 
     case "START_TIMER":
-      return { ...state, elapsed: 0, hintStage: 0, timerPaused: false, selected: null, answered: false, isFlipped: false, fiftyFiftyUsed: false };
+      return {
+        ...state,
+        elapsed: 0,
+        hintStage: 0,
+        timerPaused: false,
+        selected: null,
+        answered: false,
+        isFlipped: false,
+        fiftyFiftyUsed: false,
+      };
 
     case "TICK": {
       if (state.answered || state.timerPaused) return state;
@@ -217,6 +269,25 @@ function reduce(state: QuizState, action: QuizAction): QuizState {
     case "TOGGLE_PAUSE":
       return { ...state, timerPaused: !state.timerPaused };
 
+    case "GO_TO_QUESTION": {
+      const idx = Math.max(0, Math.min(state.questions.length - 1, action.index));
+      if (idx === state.currentIndex || !state.questions[idx]) return state;
+      const alreadyAnswered = state.results.some(
+        (r) => r.questionId === state.questions[idx].id
+      );
+      return {
+        ...state,
+        currentIndex: idx,
+        selected: null,
+        answered: alreadyAnswered,
+        hintStage: alreadyAnswered ? 0 : state.hintStage,
+        isFlipped: false,
+        timerPaused: false,
+        elapsed: 0,
+        fiftyFiftyUsed: alreadyAnswered ? false : state.fiftyFiftyUsed,
+      };
+    }
+
     case "BUY_POWERUP":
       if (state.stats.points < action.cost) return state;
       return {
@@ -226,7 +297,7 @@ function reduce(state: QuizState, action: QuizAction): QuizState {
       };
 
     case "USE_POWERUP":
-      if (state.inventory[action.name] <= 0 || state.answered) return state;
+      if (state.inventory[action.name] <= 0 || state.answered || state.mode === "hard") return state;
       return {
         ...state,
         inventory: { ...state.inventory, [action.name]: state.inventory[action.name] - 1 },
@@ -250,7 +321,11 @@ function reduce(state: QuizState, action: QuizAction): QuizState {
         fiftyFiftyUsed: state.fiftyFiftyUsed,
       });
 
-      const newTier = Math.max(1, Math.min(5, state.stats.tier + scoring.deltaTier)) as Difficulty;
+      const rawTier = state.stats.tier + scoring.deltaTier;
+      const newTier =
+        state.mode === "hard"
+          ? 4
+          : (Math.max(1, Math.min(5, rawTier)) as Difficulty);
 
       const result: QuestionResult = {
         questionId: q.id,
@@ -297,7 +372,9 @@ function reduce(state: QuizState, action: QuizAction): QuizState {
     case "RESET_GAME":
       return {
         ...initialState,
+        mode: state.mode,
         inventory: state.inventory,
+        stats: defaultStats(state.mode),
       };
 
     default:
@@ -310,9 +387,11 @@ interface QuizContextValue {
   setSource: (text: string, topics: string) => void;
   loadQuestions: (questions: FlashcardQuestion[]) => void;
   setScreen: (screen: Screen) => void;
+  setMode: (mode: QuizMode) => void;
   startTimer: () => void;
   tick: () => void;
   togglePause: () => void;
+  goToQuestion: (index: number) => void;
   buyPowerup: (name: keyof PowerupInventory, cost: number) => void;
   usePowerup: (name: keyof PowerupInventory) => void;
   selectAnswer: (index: number) => void;
@@ -371,9 +450,11 @@ export function QuizProvider({ children }: { children: ReactNode }) {
       setSource: (text, topics) => dispatch({ type: "SET_SOURCE", text, topics }),
       loadQuestions: (questions) => dispatch({ type: "LOAD_QUESTIONS", questions }),
       setScreen: (screen) => dispatch({ type: "SET_SCREEN", screen }),
+      setMode: (mode) => dispatch({ type: "SET_MODE", mode }),
       startTimer: () => dispatch({ type: "START_TIMER" }),
       tick: () => dispatch({ type: "TICK" }),
       togglePause: () => dispatch({ type: "TOGGLE_PAUSE" }),
+      goToQuestion: (index) => dispatch({ type: "GO_TO_QUESTION", index }),
       buyPowerup: (name, cost) => dispatch({ type: "BUY_POWERUP", name, cost }),
       usePowerup: (name) => dispatch({ type: "USE_POWERUP", name }),
       selectAnswer: (index) => dispatch({ type: "SELECT_ANSWER", index }),

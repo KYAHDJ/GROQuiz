@@ -1,4 +1,5 @@
 export type Difficulty = 1 | 2 | 3 | 4 | 5;
+export type QuizMode = "balanced" | "hard";
 
 export interface FlashcardQuestion {
   id: string;
@@ -75,5 +76,6 @@ export interface SavedGame {
   currentText: string;
   currentTopics: string;
   screen: "quiz" | "results";
+  mode: QuizMode;
   savedAt: number;
 }

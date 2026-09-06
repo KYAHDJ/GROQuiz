@@ -1,19 +1,25 @@
 "use client";
 
+import { useEffect, useState } from "react";
+import { ArrowLeft, Sparkles, Loader2, CheckCircle2, AlertCircle } from "lucide-react";
 import { useQuiz } from "@/context/QuizContext";
-import { ArrowLeft } from "lucide-react";
 import type { HistoryRecord } from "@/lib/types";
 import {
   Target,
   Flame,
   Clock,
-  CheckCircle2,
   XCircle,
   RotateCcw,
   BarChart3,
   TrendingUp,
   Zap,
 } from "lucide-react";
+
+interface CoachFeedback {
+  strengths: string[];
+  weaknesses: string[];
+  feedback: string;
+}
 
 export default function ScoreDisplay({
   record,
@@ -28,6 +34,7 @@ export default function ScoreDisplay({
   const stats = record ? record.stats : state.stats;
   const results = record ? record.results : state.results;
   const questions = record ? record.questions : state.questions;
+  const topic = record ? record.topic : state.currentTopics;
   const accuracy = stats.answered
     ? Math.round((stats.correct / stats.answered) * 100)
     : 0;
@@ -40,6 +47,29 @@ export default function ScoreDisplay({
       ).toFixed(1)
     : "0";
   const totalPoints = results.reduce((a, r) => a + r.pointsEarned, 0);
+
+  const [coach, setCoach] = useState<CoachFeedback | null>(null);
+  const [coachPending, setCoachPending] = useState(false);
+
+  useEffect(() => {
+    if (results.length === 0 || coach) return;
+    setCoachPending(true);
+    fetch("/api/analysis", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ topic, questions, results, stats }),
+    })
+      .then((r) => r.json())
+      .then((d) =>
+        setCoach({
+          strengths: Array.isArray(d.strengths) ? d.strengths : [],
+          weaknesses: Array.isArray(d.weaknesses) ? d.weaknesses : [],
+          feedback: typeof d.feedback === "string" ? d.feedback : "",
+        })
+      )
+      .catch(() => setCoach(null))
+      .finally(() => setCoachPending(false));
+  }, [results, questions, stats, topic, coach]);
 
   const grade =
     accuracy >= 90
@@ -104,6 +134,60 @@ export default function ScoreDisplay({
           label="Avg Hints"
           value={avgHints}
         />
+      </div>
+
+      {/* AI Coach */}
+      <div className="w-full max-w-md mb-8 bg-slate-800/50 border border-violet-500/25 rounded-2xl p-4">
+        <p className="text-xs font-semibold text-violet-300 flex items-center gap-1.5 mb-3">
+          <Sparkles size={13} />
+          AI Coach Feedback
+        </p>
+        {coachPending ? (
+          <div className="flex items-center gap-2 text-xs text-slate-400">
+            <Loader2 size={14} className="animate-spin text-violet-400" />
+            Analyzing your answers…
+          </div>
+        ) : coach ? (
+          <div className="space-y-3 text-sm">
+            <div className="space-y-1.5">
+              <p className="text-[11px] font-medium text-emerald-400 flex items-center gap-1">
+                <CheckCircle2 size={11} /> Good stuff
+              </p>
+              {coach.strengths.length > 0 ? (
+                coach.strengths.map((s, i) => (
+                  <p key={i} className="text-slate-300 leading-snug">
+                    {s}
+                  </p>
+                ))
+              ) : (
+                <p className="text-slate-400">No strong areas yet — keep practicing!</p>
+              )}
+            </div>
+            <div className="space-y-1.5">
+              <p className="text-[11px] font-medium text-amber-400 flex items-center gap-1">
+                <AlertCircle size={11} /> Watch out for
+              </p>
+              {coach.weaknesses.length > 0 ? (
+                coach.weaknesses.map((w, i) => (
+                  <p key={i} className="text-slate-300 leading-snug">
+                    {w}
+                  </p>
+                ))
+              ) : (
+                <p className="text-slate-400">Nothing major — you're solid.</p>
+              )}
+            </div>
+            <p className="text-slate-200 leading-snug pt-1 border-t border-slate-700/60">
+              {coach.feedback}
+            </p>
+          </div>
+        ) : (
+          <p className="text-xs text-slate-400">
+            {results.length > 0
+              ? "Couldn't load the AI analysis right now."
+              : "Finish the quiz to get AI feedback."}
+          </p>
+        )}
       </div>
 
       <div className="w-full max-w-md space-y-2 mb-8">

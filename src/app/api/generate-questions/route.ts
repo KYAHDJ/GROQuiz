@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { getGroqClient, DEFAULT_MODEL } from "@/lib/groq";
+import { chatWithFallback, DEFAULT_MODEL, parseJsonContent } from "@/lib/groq";
 import type { GenerateQuestionsRequest, GenerateQuestionsResponse, FlashcardQuestion, Difficulty } from "@/lib/types";
 
 export const runtime = "nodejs";
@@ -144,11 +144,13 @@ Make the questions meaningful, test actual understanding, include plausible dist
       );
     }
 
-    const client = getGroqClient();
-    const completion = await client.chat.completions.create({
+    const raw = await chatWithFallback({
       model: DEFAULT_MODEL,
       messages: [
-        { role: "system", content: "You output strictly valid JSON arrays. Never include surrounding text." },
+        {
+          role: "system",
+          content: "You output strictly valid JSON arrays. Never include surrounding text.",
+        },
         { role: "user", content: prompt },
       ],
       response_format: { type: "json_object" },
@@ -156,7 +158,6 @@ Make the questions meaningful, test actual understanding, include plausible dist
       max_tokens: 2048,
     });
 
-    const raw = completion.choices[0]?.message?.content ?? "";
     const parsed = extractJson(raw);
     const questions = sanitizeQuestions(parsed, difficulty, count);
 

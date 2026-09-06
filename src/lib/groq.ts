@@ -3,16 +3,80 @@ import Groq from "groq-sdk";
 export const DEFAULT_MODEL = "openai/gpt-oss-120b";
 export const FAST_MODEL = "openai/gpt-oss-20b";
 
-let cachedClient: Groq | null = null;
+const clientCache = new Map<string, Groq>();
+
+export function apiKeys(): string[] {
+  const keys: string[] = [];
+  const push = (v: unknown) => {
+    if (typeof v === "string" && v.trim()) keys.push(v.trim());
+  };
+  push(process.env.GROQ_API_KEY);
+  push(process.env.GROQ_API_KEY_1);
+  for (let i = 2; i <= 6; i++) push(process.env[`GROQ_API_KEY_${i}`]);
+  return keys;
+}
 
 export function getGroqClient(): Groq {
-  if (!process.env.GROQ_API_KEY) {
-    throw new Error("GROQ_API_KEY is not set");
+  const keys = apiKeys();
+  const key = keys[0];
+  if (!key) throw new Error("GROQ_API_KEY is not set");
+  const cached = clientCache.get(key);
+  if (cached) return cached;
+  const client = new Groq({ apiKey: key });
+  clientCache.set(key, client);
+  return client;
+}
+
+export interface ChatOptions {
+  model: string;
+  messages: Array<{ role: "system" | "user"; content: string }>;
+  response_format?: { type: "json_object" };
+  temperature?: number;
+  max_tokens?: number;
+}
+
+/**
+ * Runs a chat completion, trying each configured GROQ key in order.
+ * If a key fails (rate limit, outage), the next key is used automatically.
+ */
+export async function chatWithFallback(
+  opts: ChatOptions
+): Promise<string> {
+  const keys = apiKeys();
+  if (keys.length === 0) throw new Error("GROQ_API_KEY is not set");
+  let lastErr: unknown;
+
+  for (const key of keys) {
+    try {
+      let client = clientCache.get(key);
+      if (!client) {
+        client = new Groq({ apiKey: key });
+        clientCache.set(key, client);
+      }
+      const completion = await client.chat.completions.create(
+        opts as unknown as Parameters<typeof client.chat.completions.create>[0]
+      );
+      const anyCompletion = completion as {
+        choices?: Array<{ message?: { content?: string | null } }>;
+      };
+      return anyCompletion.choices?.[0]?.message?.content ?? "";
+    } catch (err) {
+      lastErr = err;
+      if (keys.length === 1) throw err;
+    }
   }
-  if (!cachedClient) {
-    cachedClient = new Groq({ apiKey: process.env.GROQ_API_KEY });
+  throw lastErr;
+}
+
+export function parseJsonContent(
+  raw: string
+): string | Record<string, unknown> {
+  const cleaned = raw.replace(/^```(?:json)?\s*/i, "").replace(/```\s*$/, "");
+  try {
+    return JSON.parse(cleaned) as Record<string, unknown>;
+  } catch {
+    return cleaned;
   }
-  return cachedClient;
 }
 
 export async function parsePdfBuffer(

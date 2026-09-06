@@ -9,7 +9,6 @@ import {
   BrainCircuit,
   Zap,
   Clock,
-  TrendingUp,
   Award,
 } from "lucide-react";
 import { useQuiz } from "@/context/QuizContext";
@@ -52,7 +51,7 @@ export default function QuizCard() {
     currentQuestion,
   } = useQuiz();
 
-  const { selected, answered, hintStage, timerPaused, inventory } = state;
+  const { selected, answered, hintStage, timerPaused, inventory, mode } = state;
 
   const q: FlashcardQuestion | null = currentQuestion;
 
@@ -97,16 +96,6 @@ export default function QuizCard() {
 
   const showTip = hintStage >= 2 && !answered;
   const showKeywords = hintStage >= 1 && !answered;
-  const fiftyAutoTriggered =
-    hintStage >= 3 && !answered && !fiftyActive && !shrinkPickedRef.current;
-
-  useEffect(() => {
-    if (fiftyAutoTriggered && q) {
-      shrinkPickedRef.current = true;
-      setShrunk(pickTwoWrong(q));
-      setFiftyActive(true);
-    }
-  }, [fiftyAutoTriggered, q, pickTwoWrong]);
 
   useEffect(() => {
     if (showTip && !hintFetched && q) {
@@ -128,7 +117,14 @@ export default function QuizCard() {
 
   if (!q) return null;
 
-  const isCorrectAnswer = selected === q.correctIndex;
+  const questionResult = answered
+    ? state.results.find((r) => r.questionId === q.id)
+    : undefined;
+  const isCorrectAnswer = answered
+    ? selected !== null
+      ? selected === q.correctIndex
+      : questionResult?.correct ?? false
+    : selected === q.correctIndex;
 
   const handleUsePowerup = async (
     name: "50-50" | "time-extension" | "ai-clarifier"
@@ -224,9 +220,9 @@ export default function QuizCard() {
         )}
 
         {fiftyActive && !answered && (
-          <div className="bg-emerald-500/10 border border-emerald-500/25 rounded-xl px-4 py-2 text-xs text-emerald-300 flex items-center gap-2">
-            <Zap size={13} className="shrink-0" />
-            The answer is highlighted bigger — the shrunken ones are wrong.
+          <div className="bg-slate-700/30 border border-slate-600/30 rounded-xl px-4 py-2 text-xs text-slate-400 flex items-center gap-2">
+            <Zap size={13} className="shrink-0 text-yellow-400" />
+            50/50 used — smaller options are probably wrong. You decide.
           </div>
         )}
 
@@ -345,7 +341,7 @@ export default function QuizCard() {
       </div>
 
       {/* POWERUP BUTTONS */}
-      {!answered && (
+      {!answered && mode === "balanced" && (
         <div className="mt-4 flex flex-wrap justify-center gap-2">
           <PowerupButton
             icon={<Zap size={14} className="text-yellow-400" />}
@@ -375,13 +371,6 @@ export default function QuizCard() {
         <div className="mt-3 bg-violet-500/10 border border-violet-500/25 rounded-xl px-4 py-3 text-sm text-violet-200/90 animate-slide-up max-w-xl mx-auto">
           <span className="font-medium text-violet-300 block mb-1">AI Analogy</span>
           {clarification}
-        </div>
-      )}
-
-      {hintStage >= 2 && fiftyActive && !answered && (
-        <div className="mt-2 text-center text-[11px] text-slate-500 flex items-center justify-center gap-1">
-          <TrendingUp size={11} />
-          You also have an AI hint above — it points to the right answer.
         </div>
       )}
     </div>
