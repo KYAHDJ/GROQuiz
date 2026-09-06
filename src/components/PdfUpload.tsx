@@ -1,9 +1,11 @@
 "use client";
 
 import { useRef, useState } from "react";
-import { Upload, FileText, Loader2, History, ChevronRight } from "lucide-react";
+import { Upload, FileText, Loader2, History, ChevronRight, ClipboardPaste, X } from "lucide-react";
 import { useQuiz } from "@/context/QuizContext";
 import type { FlashcardQuestion, HistoryRecord } from "@/lib/types";
+
+const MAX_PDF_MB = 4;
 
 export default function PdfUpload({
   onReview,
@@ -17,9 +19,58 @@ export default function PdfUpload({
   const [progress, setProgress] = useState<number | null>(null);
   const [progressLabel, setProgressLabel] = useState("");
   const [topics, setTopics] = useState("");
+  const [pastedText, setPastedText] = useState("");
+  const [showPaste, setShowPaste] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const clearError = () => setError(null);
+
+  const startQuestionsFromText = async (text: string) => {
+    if (text.trim().length < 20) {
+      setError("Please provide at least a couple sentences of material.");
+      return;
+    }
+    setError(null);
+    setFileName("Provided material");
+
+    try {
+      setProgressLabel("Generating questions…");
+      setProgress(50);
+
+      const genBody = new FormData();
+      genBody.append("topics", topics);
+      genBody.append("text", text);
+      const genRes = await fetch("/api/generate-questions", { method: "POST", body: genBody });
+      const genData = await genRes.json();
+
+      if (!genRes.ok) {
+        setProgress(null);
+        setError(genData.error ?? "We couldn't generate questions for this material.");
+        return;
+      }
+
+      const questions: FlashcardQuestion[] = Array.isArray(genData.questions)
+        ? genData.questions
+        : [];
+      if (questions.length === 0) {
+        setProgress(null);
+        setError("No questions could be generated from this material. Try longer text.");
+        return;
+      }
+
+      setProgress(100);
+      setSource(text, topics);
+      setTimeout(() => {
+        loadQuestions(questions);
+        setScreen("quiz");
+        setProgress(null);
+        setFileName(null);
+      }, 400);
+    } catch {
+      setProgress(null);
+      setError("Something went wrong while generating questions. Please try again.");
+    }
+  };
 
   const handleFile = (file: File) => {
     setError(null);
@@ -28,8 +79,11 @@ export default function PdfUpload({
       setError("Please choose a PDF file.");
       return;
     }
-    if (file.size > 10 * 1024 * 1024) {
-      setError("That PDF is too large (max 10 MB).");
+    if (file.size > MAX_PDF_MB * 1024 * 1024) {
+      setError(
+        `That PDF is ${(file.size / 1024 / 1024).toFixed(1)} MB — the free host accepts up to ${MAX_PDF_MB} MB. Use a smaller PDF or paste the text below instead.`
+      );
+      setShowPaste(true);
       return;
     }
 
@@ -50,45 +104,22 @@ export default function PdfUpload({
       if (!parseRes.ok) {
         setProgress(null);
         setError(parseData.error ?? "We couldn't read that PDF.");
+        setShowPaste(true);
         return;
       }
 
+      const text = parseData.text as string;
       setProgressLabel("Generating questions…");
       setProgress(60);
-
-      const genBody = new FormData();
-      genBody.append("text", parseData.text);
-      genBody.append("topics", topics);
-      const genRes = await fetch("/api/generate-questions", { method: "POST", body: genBody });
-      const genData = await genRes.json();
-
-      if (!genRes.ok) {
-        setProgress(null);
-        setError(genData.error ?? "We couldn't generate questions for this material.");
-        return;
-      }
-
-      setProgress(100);
-
-      const questions: FlashcardQuestion[] = Array.isArray(genData.questions)
-        ? genData.questions
-        : [];
-      if (questions.length === 0) {
-        setProgress(null);
-        setError("No questions could be generated from this material. Try a longer text.");
-        return;
-      }
-
-      setSource(parseData.text, topics);
-      setTimeout(() => {
-        loadQuestions(questions);
-        setScreen("quiz");
-        setProgress(null);
-        setFileName(null);
-      }, 400);
-    } catch {
+      await startQuestionsFromText(text);
+    } catch (err) {
       setProgress(null);
-      setError("Something went wrong while uploading. Please try again.");
+      setError(
+        err instanceof TypeError && err.message.includes("413")
+          ? `This PDF is larger than the ${MAX_PDF_MB} MB the host allows. Paste the text below instead.`
+          : "Something went wrong while uploading. Please try again."
+      );
+      setShowPaste(true);
     }
   };
 
@@ -97,46 +128,11 @@ export default function PdfUpload({
       setError("Enter a topic for your material to continue.");
       return;
     }
-    setError(null);
-    setFileName("Typed material");
-
-    try {
-      setProgressLabel("Generating questions…");
-      setProgress(50);
-
-      const genBody = new FormData();
-      genBody.append("topics", topics);
-      genBody.append("text", "");
-      const genRes = await fetch("/api/generate-questions", { method: "POST", body: genBody });
-      const genData = await genRes.json();
-
-      if (!genRes.ok) {
-        setProgress(null);
-        setError(genData.error ?? "We couldn't generate questions for that topic.");
-        return;
-      }
-
-      const questions: FlashcardQuestion[] = Array.isArray(genData.questions)
-        ? genData.questions
-        : [];
-      if (questions.length === 0) {
-        setProgress(null);
-        setError("No questions could be generated for this topic. Try a more specific one.");
-        return;
-      }
-
-      setProgress(100);
-      setSource("", topics);
-      setTimeout(() => {
-        loadQuestions(questions);
-        setScreen("quiz");
-        setProgress(null);
-        setFileName(null);
-      }, 400);
-    } catch {
-      setProgress(null);
-      setError("Something went wrong while generating questions.");
+    if (pastedText.trim().length === 0) {
+      setError("Paste some text first — that's what the questions come from.");
+      return;
     }
+    await startQuestionsFromText(pastedText);
   };
 
   const active = progress !== null;
@@ -219,12 +215,13 @@ export default function PdfUpload({
             <p className="text-xs text-slate-500 text-center">
               Text is extracted on the fly — your document is never stored.
               <br />
-              Scanned/image PDFs aren't supported — paste the text below instead.
+              Max {MAX_PDF_MB} MB. Scanned/image-only PDFs can't be read — paste the text below instead.
             </p>
           </>
         )}
       </div>
 
+      {/* Topic input */}
       <div className="bg-slate-800/40 border border-slate-700/60 rounded-2xl p-4 space-y-3">
         <label htmlFor="topics" className="block text-xs font-medium text-slate-400">
           What is this material about?
@@ -234,20 +231,47 @@ export default function PdfUpload({
           type="text"
           value={topics}
           onChange={(e) => setTopics(e.target.value)}
-          onKeyDown={(e) => {
-            if (e.key === "Enter") handleGenerate();
-          }}
           placeholder="e.g. Photosynthesis for high school biology"
           className="w-full bg-slate-900/60 border border-slate-700 rounded-xl px-4 py-2.5 text-sm text-slate-200 placeholder-slate-600 focus:outline-none focus:border-cyan-500/50"
         />
+      </div>
+
+      {/* Paste-text fallback */}
+      <div className="bg-slate-800/40 border border-slate-700/60 rounded-2xl overflow-hidden">
         <button
           type="button"
-          onClick={handleGenerate}
-          disabled={active}
-          className="w-full bg-slate-700 hover:bg-slate-600 disabled:opacity-50 text-slate-200 text-sm font-medium rounded-xl py-2.5 transition-colors"
+          onClick={() => setShowPaste((v) => !v)}
+          className="w-full flex items-center justify-between gap-2 px-4 py-3 text-sm text-slate-300 hover:bg-slate-700/40 transition-colors"
         >
-          Generate questions about this topic
+          <span className="flex items-center gap-2">
+            <ClipboardPaste size={15} className="text-cyan-400" />
+            <span className="font-medium">
+              {showPaste ? "Hide" : "PDF not working?"} Paste the text instead
+            </span>
+          </span>
+          {showPaste ? <X size={15} className="text-slate-500" /> : <ChevronRight size={15} className="text-slate-500" />}
         </button>
+
+        {showPaste && (
+          <div className="px-4 pb-4 space-y-3 animate-slide-up">
+            <textarea
+              value={pastedText}
+              onChange={(e) => setPastedText(e.target.value)}
+              rows={7}
+              placeholder="Paste the text of your notes, article, or chapter here…"
+              className="w-full bg-slate-900/60 border border-slate-700 rounded-xl px-3 py-2.5 text-sm text-slate-200 placeholder-slate-600 focus:outline-none focus:border-cyan-500/50 resize-y"
+            />
+            <div className="text-xs text-slate-500 -mt-1">{pastedText.length} characters</div>
+            <button
+              type="button"
+              onClick={handleGenerate}
+              disabled={active}
+              className="w-full bg-cyan-600 hover:bg-cyan-500 disabled:opacity-50 text-white text-sm font-medium rounded-xl py-2.5 transition-colors"
+            >
+              Generate questions from this text
+            </button>
+          </div>
+        )}
       </div>
 
       {history.length > 0 && (

@@ -25,13 +25,39 @@ export async function POST(req: Request): Promise<NextResponse> {
 
     const arrayBuffer = await file.arrayBuffer();
     const buffer = Buffer.from(arrayBuffer);
-    const { text, numpages } = await parsePdfBuffer(buffer);
+
+    let text = "";
+    let numpages = 1;
+    try {
+      const parsed = await parsePdfBuffer(buffer);
+      text = parsed.text;
+      numpages = parsed.numpages;
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : "";
+      if (msg === "EMPTY_TEXT") {
+        return NextResponse.json(
+          {
+            error:
+              "This PDF has no readable text layer. If it's a scanned document (photos of pages), upload a text-based PDF or paste the text below instead.",
+          } satisfies ParsePdfResponse,
+          { status: 422 }
+        );
+      }
+      console.error("parse-pdf error:", err);
+      return NextResponse.json(
+        {
+          error:
+            "This PDF couldn't be parsed (it may be corrupted, password-protected, or use an unsupported format). Try a different file or paste the text below instead.",
+        } satisfies ParsePdfResponse,
+        { status: 422 }
+      );
+    }
 
     if (!text || text.trim().length < 20) {
       return NextResponse.json(
         {
           error:
-            "We couldn't find any readable text in this PDF. If it's a scanned document (images), upload a text PDF or paste the text below instead.",
+            "This PDF has almost no readable text. If it's a scanned document (photos of pages), upload a text-based PDF or paste the text below instead.",
         } satisfies ParsePdfResponse,
         { status: 422 }
       );

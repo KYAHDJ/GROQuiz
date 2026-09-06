@@ -9,8 +9,8 @@ import {
   BrainCircuit,
   Zap,
   Clock,
-  RotateCw,
   TrendingUp,
+  Award,
 } from "lucide-react";
 import { useQuiz } from "@/context/QuizContext";
 import type { FlashcardQuestion } from "@/lib/types";
@@ -52,7 +52,7 @@ export default function QuizCard() {
     currentQuestion,
   } = useQuiz();
 
-  const { selected, answered, isFlipped, hintStage, timerPaused, inventory } = state;
+  const { selected, answered, hintStage, timerPaused, inventory } = state;
 
   const q: FlashcardQuestion | null = currentQuestion;
 
@@ -60,7 +60,6 @@ export default function QuizCard() {
   const [loadingClarify, setLoadingClarify] = useState(false);
   const [fiftyActive, setFiftyActive] = useState(false);
   const [shrunk, setShrunk] = useState<Set<number>>(new Set());
-  const [localFlipped, setLocalFlipped] = useState(false);
   const [freezeActive, setFreezeActive] = useState(false);
   const [hint, setHint] = useState<string | null>(null);
   const [hintFetched, setHintFetched] = useState(false);
@@ -93,13 +92,13 @@ export default function QuizCard() {
     setFiftyActive(false);
     setShrunk(new Set());
     shrinkPickedRef.current = false;
-    setLocalFlipped(false);
     setFreezeActive(false);
   }, [q?.id]);
 
-  const showKeywords = hintStage >= 1 && !answered;
   const showTip = hintStage >= 2 && !answered;
-  const fiftyAutoTriggered = hintStage >= 3 && !answered && !fiftyActive && !shrinkPickedRef.current;
+  const showKeywords = hintStage >= 1 && !answered;
+  const fiftyAutoTriggered =
+    hintStage >= 3 && !answered && !fiftyActive && !shrinkPickedRef.current;
 
   useEffect(() => {
     if (fiftyAutoTriggered && q) {
@@ -107,7 +106,7 @@ export default function QuizCard() {
       setShrunk(pickTwoWrong(q));
       setFiftyActive(true);
     }
-  }, [fiftyAutoTriggered, q]);
+  }, [fiftyAutoTriggered, q, pickTwoWrong]);
 
   useEffect(() => {
     if (showTip && !hintFetched && q) {
@@ -115,7 +114,11 @@ export default function QuizCard() {
       fetch("/api/hint", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ question: q.question, options: q.options, correctIndex: q.correctIndex }),
+        body: JSON.stringify({
+          question: q.question,
+          options: q.options,
+          correctIndex: q.correctIndex,
+        }),
       })
         .then((r) => r.json())
         .then((d) => setHint(d.hint ?? null))
@@ -124,6 +127,8 @@ export default function QuizCard() {
   }, [showTip, hintFetched, q]);
 
   if (!q) return null;
+
+  const isCorrectAnswer = selected === q.correctIndex;
 
   const handleUsePowerup = async (
     name: "50-50" | "time-extension" | "ai-clarifier"
@@ -172,204 +177,171 @@ export default function QuizCard() {
     setFiftyActive(true);
   };
 
-  const flipped = localFlipped || isFlipped;
-
   return (
     <div className="w-full max-w-xl mx-auto px-4">
-      <div className="hint-banner mb-1 text-center text-[11px] text-slate-500">
-        {hintStage >= 1 ? "Hints active — score drops 25% per hint" : "Answer fast for a bigger score"}
+      <div className="mb-1 text-center text-[11px] text-slate-500">
+        {hintStage >= 1 && !answered
+          ? "Hints active — score drops 25% per hint"
+          : "Answer fast for a bigger score"}
       </div>
 
-      <div className="perspective-1200">
-        <div
-          className={`relative transition-transform duration-500 preserve-3d ${flipped ? "rotate-y-180" : ""}`}
-        >
-          {/* FRONT FACE */}
-          <div
-            className="backface-hidden w-full bg-slate-800/80 border border-slate-700/60 rounded-2xl p-6 sm:p-8 space-y-5"
-            style={{ backfaceVisibility: "hidden", WebkitBackfaceVisibility: "hidden" }}
-          >
-            <div className="flex items-center justify-between">
-              <p className="text-sm text-slate-500 font-medium">
-                Q{state.currentIndex + 1}/{state.questions.length}
-              </p>
-              {!answered && (
-                <button
-                  type="button"
-                  onClick={() => setLocalFlipped(true)}
-                  className="flex items-center gap-1.5 text-xs font-medium text-slate-400 hover:text-cyan-300 transition-colors"
-                >
-                  <RotateCw size={14} />
-                  Flip
-                </button>
-              )}
-            </div>
-
-            {freezeActive && (
-              <div className="bg-cyan-500/10 border border-cyan-500/25 rounded-xl px-4 py-2 text-xs text-cyan-300 flex items-center gap-2">
-                <Clock size={13} className="shrink-0" />
-                Timer frozen for 15 seconds — take your time!
-              </div>
-            )}
-
-            <h2
-              className={`text-slate-100 text-lg sm:text-xl font-semibold leading-relaxed ${
-                showKeywords ? "" : ""
+      <div className="bg-slate-800/80 border border-slate-700/60 rounded-2xl p-6 sm:p-8 space-y-5">
+        <div className="flex items-center justify-between">
+          <p className="text-sm text-slate-500 font-medium">
+            Q{state.currentIndex + 1}/{state.questions.length}
+          </p>
+          {answered && (
+            <span
+              className={`text-xs font-bold flex items-center gap-1.5 ${
+                isCorrectAnswer ? "text-emerald-400" : "text-red-400"
               }`}
             >
-              {showKeywords ? highlightKeywords(q.question) : q.question}
-            </h2>
+              {isCorrectAnswer ? <Check size={14} /> : <X size={14} />}
+              {isCorrectAnswer ? "Correct!" : "Incorrect"}
+            </span>
+          )}
+        </div>
 
-            {showTip && (
-              <div className="bg-amber-500/10 border border-amber-500/25 rounded-xl px-4 py-3 text-xs sm:text-sm text-amber-200/90 animate-slide-up flex items-start gap-2">
-                <Lightbulb size={14} className="shrink-0 mt-0.5 text-amber-400 animate-pulse-hint" />
-                <span>
-                  {hint ?? "Loading hint…"}
+        {freezeActive && (
+          <div className="bg-cyan-500/10 border border-cyan-500/25 rounded-xl px-4 py-2 text-xs text-cyan-300 flex items-center gap-2">
+            <Clock size={13} className="shrink-0" />
+            Timer frozen for 15 seconds — take your time!
+          </div>
+        )}
+
+        <h2 className="text-slate-100 text-lg sm:text-xl font-semibold leading-relaxed">
+          {showKeywords ? highlightKeywords(q.question) : q.question}
+        </h2>
+
+        {showTip && (
+          <div className="bg-amber-500/10 border border-amber-500/25 rounded-xl px-4 py-3 text-xs sm:text-sm text-amber-200/90 animate-slide-up flex items-start gap-2">
+            <Lightbulb
+              size={14}
+              className="shrink-0 mt-0.5 text-amber-400 animate-pulse-hint"
+            />
+            <span>{hint ?? "Loading hint…"}</span>
+          </div>
+        )}
+
+        {fiftyActive && !answered && (
+          <div className="bg-emerald-500/10 border border-emerald-500/25 rounded-xl px-4 py-2 text-xs text-emerald-300 flex items-center gap-2">
+            <Zap size={13} className="shrink-0" />
+            The answer is highlighted bigger — the shrunken ones are wrong.
+          </div>
+        )}
+
+        <div className="grid grid-cols-1 gap-2.5">
+          {q.options.map((opt, i) => {
+            const isShrunk = shrunk.has(i);
+            const isBoosted = fiftyActive && i === q.correctIndex;
+            const isSelected = selected === i;
+            const isCorrect = i === q.correctIndex;
+
+            let optStyle =
+              "bg-slate-900/60 border-slate-700 hover:border-slate-500 hover:bg-slate-800/80 text-slate-200";
+            let extraClasses = "";
+
+            if (answered) {
+              if (isCorrect) {
+                optStyle =
+                  "bg-emerald-500/15 border-emerald-500/50 text-emerald-300";
+              } else if (isSelected && !isCorrect) {
+                optStyle = "bg-red-500/15 border-red-500/50 text-red-300";
+              } else {
+                optStyle = "bg-slate-900/30 border-slate-800 text-slate-500";
+              }
+            } else if (isShrunk) {
+              optStyle = "bg-slate-900/40 border-slate-800 text-slate-500 opacity-60";
+              extraClasses = "py-1.5 text-xs";
+            } else if (isBoosted) {
+              optStyle =
+                "bg-emerald-500/15 border-emerald-500/60 text-emerald-200 ring-1 ring-emerald-500/40";
+              extraClasses = "scale-[1.03] font-semibold";
+            } else if (isSelected) {
+              optStyle = "bg-cyan-500/10 border-cyan-500/40 text-cyan-200";
+            }
+
+            return (
+              <button
+                key={i}
+                type="button"
+                disabled={answered}
+                onClick={() => selectAnswer(i)}
+                className={`relative text-left border rounded-xl px-4 py-3 text-sm sm:text-base transition-all duration-300 disabled:cursor-not-allowed ${optStyle} ${extraClasses}`}
+              >
+                <span
+                  className={`absolute left-3 top-1/2 -translate-y-1/2 w-6 h-6 rounded-full ${
+                    isBoosted && !answered
+                      ? "bg-emerald-600 text-white"
+                      : "bg-slate-700/60 text-slate-400"
+                  } flex items-center justify-center text-[10px] font-bold`}
+                >
+                  {String.fromCharCode(65 + i)}
                 </span>
-              </div>
-            )}
+                <span className={`pl-8 ${isShrunk && !answered ? "block truncate" : ""}`}>
+                  {opt}
+                </span>
+                {answered && isCorrect && (
+                  <Check
+                    size={16}
+                    className="absolute right-3 top-1/2 -translate-y-1/2 text-emerald-400"
+                  />
+                )}
+                {answered && isSelected && !isCorrect && (
+                  <X
+                    size={16}
+                    className="absolute right-3 top-1/2 -translate-y-1/2 text-red-400"
+                  />
+                )}
+              </button>
+            );
+          })}
+        </div>
 
-            {fiftyActive && !answered && (
-              <div className="bg-emerald-500/10 border border-emerald-500/25 rounded-xl px-4 py-2 text-xs text-emerald-300 flex items-center gap-2">
-                <Zap size={13} className="shrink-0" />
-                The answer is highlighted bigger — the shrunken ones are wrong.
-              </div>
-            )}
-
-            <div className="grid grid-cols-1 gap-2.5">
-              {q.options.map((opt, i) => {
-                const isShrunk = shrunk.has(i);
-                const isBoosted = fiftyActive && i === q.correctIndex;
-                const isSelected = selected === i;
-                const isCorrectAnswer = i === q.correctIndex;
-
-                let optStyle =
-                  "bg-slate-900/60 border-slate-700 hover:border-slate-500 hover:bg-slate-800/80 text-slate-200";
-                let extraClasses = "";
-
-                if (isShrunk && !answered) {
-                  optStyle =
-                    "bg-slate-900/40 border-slate-800 text-slate-500 opacity-60";
-                } else if (isBoosted && !answered) {
-                  optStyle =
-                    "bg-emerald-500/15 border-emerald-500/60 text-emerald-200 ring-1 ring-emerald-500/40";
-                  extraClasses = "scale-[1.03] font-semibold";
-                } else if (isBoosted && answered) {
-                  optStyle =
-                    "bg-emerald-500/15 border-emerald-500/50 text-emerald-300";
-                }
-
-                if (answered) {
-                  if (isCorrectAnswer) {
-                    optStyle =
-                      "bg-emerald-500/15 border-emerald-500/50 text-emerald-300";
-                  } else if (isSelected && !isCorrectAnswer) {
-                    optStyle = "bg-red-500/15 border-red-500/50 text-red-300";
-                  } else {
-                    optStyle = "bg-slate-900/30 border-slate-800 text-slate-500";
-                  }
-                } else if (isSelected) {
-                  optStyle = "bg-cyan-500/10 border-cyan-500/40 text-cyan-200";
-                }
-
-                return (
-                  <button
-                    key={i}
-                    type="button"
-                    disabled={answered}
-                    onClick={() => selectAnswer(i)}
-                    className={`relative text-left border rounded-xl px-4 py-3 text-sm sm:text-base transition-all duration-300 disabled:cursor-not-allowed ${optStyle} ${extraClasses} ${isShrunk && !answered ? "py-1.5 text-xs" : ""}`}
-                  >
-                    <span
-                      className={`absolute left-3 top-1/2 -translate-y-1/2 w-6 h-6 rounded-full ${
-                        isBoosted && !answered
-                          ? "bg-emerald-600 text-white"
-                          : "bg-slate-700/60 text-slate-400"
-                      } flex items-center justify-center text-[10px] font-bold`}
-                    >
-                      {String.fromCharCode(65 + i)}
-                    </span>
-                    <span className={`pl-8 ${isShrunk && !answered ? "block truncate" : ""}`}>
-                      {opt}
-                    </span>
-                    {answered && isCorrectAnswer && (
-                      <Check size={16} className="absolute right-3 top-1/2 -translate-y-1/2 text-emerald-400" />
-                    )}
-                    {answered && isSelected && !isCorrectAnswer && (
-                      <X size={16} className="absolute right-3 top-1/2 -translate-y-1/2 text-red-400" />
-                    )}
-                  </button>
-                );
-              })}
+        {answered ? (
+          <div className="animate-slide-up space-y-4 border-t border-slate-700/60 pt-4">
+            <div
+              className={`rounded-xl px-4 py-3 text-sm font-semibold ${
+                isCorrectAnswer
+                  ? "bg-emerald-500/10 border border-emerald-500/30 text-emerald-300"
+                  : "bg-red-500/10 border border-red-500/30 text-red-300"
+              }`}
+            >
+              {isCorrectAnswer
+                ? "Correct! Nice work."
+                : `Incorrect — the answer was: ${q.options[q.correctIndex]}`}
+              <span className="ml-2 text-xs font-normal text-slate-400">
+                answered in {state.elapsed}s
+              </span>
             </div>
 
-            {!answered ? (
-              <button
-                type="button"
-                disabled={selected === null}
-                onClick={confirmAnswer}
-                className="w-full bg-emerald-600 hover:bg-emerald-500 disabled:bg-slate-700 disabled:text-slate-500 text-white font-semibold rounded-xl py-3 transition-colors"
-              >
-                Confirm Answer
-              </button>
-            ) : (
-              <button
-                type="button"
-                onClick={() => setLocalFlipped(true)}
-                className="w-full bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-300 font-medium rounded-xl py-3 transition-colors"
-              >
-                See Explanation
-              </button>
-            )}
-          </div>
-
-          {/* BACK FACE */}
-          <div
-            className="backface-hidden rotate-y-180 absolute inset-0 bg-slate-800/95 border border-slate-700/60 rounded-2xl p-6 sm:p-8 flex flex-col overflow-y-auto"
-            style={{ backfaceVisibility: "hidden", WebkitBackfaceVisibility: "hidden" }}
-          >
-            <div className="flex-1 overflow-y-auto space-y-4">
-              <div className="flex items-center justify-between">
-                <p className="text-sm text-slate-500 font-medium">Explanation</p>
-                <button
-                  type="button"
-                  onClick={() => setLocalFlipped(false)}
-                  className="flex items-center gap-1.5 text-xs font-medium text-slate-400 hover:text-cyan-300 transition-colors"
-                >
-                  <RotateCw size={14} />
-                  Flip back
-                </button>
-              </div>
-
-              <span
-                className={`inline-flex items-center gap-1.5 text-sm font-bold ${
-                  answered ? (selected === q.correctIndex ? "text-emerald-400" : "text-red-400") : "text-slate-300"
-                }`}
-              >
-                {answered && selected === q.correctIndex && <Check size={16} />}
-                {answered && selected !== q.correctIndex && <X size={16} />}
-                {answered
-                  ? selected === q.correctIndex
-                    ? "Correct!"
-                    : `Incorrect — the answer was: ${q.options[q.correctIndex]}`
-                  : `Answer: ${q.options[q.correctIndex]}`}
-              </span>
-
+            <div>
+              <p className="text-xs text-slate-500 mb-1.5 flex items-center gap-1.5">
+                <Award size={12} className="text-cyan-400" />
+                Explanation
+              </p>
               <p className="text-sm text-slate-300 leading-relaxed">{q.explanation}</p>
             </div>
 
-            {answered && (
-              <button
-                type="button"
-                onClick={nextQuestion}
-                className="mt-4 w-full bg-cyan-600 hover:bg-cyan-500 text-white font-semibold rounded-xl py-3 transition-colors flex items-center justify-center gap-2 shrink-0"
-              >
-                Next Question
-                <ArrowRight size={16} />
-              </button>
-            )}
+            <button
+              type="button"
+              onClick={nextQuestion}
+              className="w-full bg-cyan-600 hover:bg-cyan-500 text-white font-semibold rounded-xl py-3 transition-colors flex items-center justify-center gap-2"
+            >
+              Next Question
+              <ArrowRight size={16} />
+            </button>
           </div>
-        </div>
+        ) : (
+          <button
+            type="button"
+            disabled={selected === null}
+            onClick={confirmAnswer}
+            className="w-full bg-emerald-600 hover:bg-emerald-500 disabled:bg-slate-700 disabled:text-slate-500 text-white font-semibold rounded-xl py-3 transition-colors"
+          >
+            Confirm Answer
+          </button>
+        )}
       </div>
 
       {/* POWERUP BUTTONS */}
