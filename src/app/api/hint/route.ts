@@ -34,7 +34,8 @@ export async function POST(req: Request): Promise<NextResponse> {
     return NextResponse.json({ hint } satisfies HintResponse, { status: 200 });
   }
 
-  const fallbackHint = `The answer is basically: ${answer}. Pick the option that says this in simple words.`;
+  const fallbackHint =
+    "Think back to what this topic is really about, then pick the option that fits best — one wrong option repeats the story, not the fact.";
 
   const difficulty = Math.max(1, Math.min(5, Number(body.difficulty) || 2)) as 1 | 2 | 3 | 4 | 5;
   const readability = DIFFICULTY_READABILITY[difficulty];
@@ -50,20 +51,20 @@ export async function POST(req: Request): Promise<NextResponse> {
   ];
   const voice = voices[Math.floor(Math.random() * voices.length)];
 
-  const prompt = `You are a kind tutor who never says the same thing twice. Write ONE short fresh clue pointing to the right answer. This time, ${voice}.
+  const prompt = `You are a kind, mysterious tutor who helps learners WITHOUT spoiling the answer, and you never say the same thing twice. Write ONE short clue that nudges the learner toward the right option. This time, ${voice}.
 
 Wording level for this hint:
 ${readability}
 
 Question: ${question}
 Answer options: ${options.map((o) => `"${o}"`).join(", ")}
-The right option is: "${answer}"
+(PS — the intended correct option is: "${answer}". Use it only to aim your clue, never to state it.)
 
 Rules:
+- NEVER reveal the answer. Do NOT name it, restate its meaning, echo its words, or say "it is…". The clue must not make the choice obvious by spelling anything out.
+- Instead nudge with context: where it happens, what it does, how it connects to the question, or one small fact from the material that points toward it.
 - Max ${wordCap} words.
-- Do NOT copy the answer word-for-word — say what it means instead.
-- Phrase it freshly and differently from any hints you have ever written.
-- ${style}It must make the correct choice obvious for the chosen reading level.`;
+- ${style}Write a fresh, different clue — no clichés, no repeating phrasing from earlier hints.`;
 
   try {
     const raw = await chatWithFallback({
