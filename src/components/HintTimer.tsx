@@ -21,14 +21,13 @@ export default function HintTimer() {
   }, []);
 
   const remaining = Math.max(0, timeLimit - elapsed);
-  const pct = Math.min((elapsed / timeLimit) * 100, 100);
-  const circumference = 2 * Math.PI * 28;
-  const offset = circumference - (pct / 100) * circumference;
+  const progress = timeLimit ? remaining / timeLimit : 0;
+  const isLow = remaining <= Math.floor(timeLimit * 0.25);
+  const radius = 24;
+  const circumference = 2 * Math.PI * radius;
+  const dashOffset = circumference * (1 - progress);
 
-  let colorClass = "stroke-slate-400";
-  if (pct >= 75) colorClass = "stroke-red-500";
-  else if (pct >= 50) colorClass = "stroke-amber-500";
-  else if (pct >= 25) colorClass = "stroke-yellow-400";
+  const timeText = `${Math.floor(remaining / 60)}:${String(remaining % 60).padStart(2, "0")}`;
 
   const urgency =
     remaining <= timeLimit * 0.1
@@ -44,32 +43,38 @@ export default function HintTimer() {
               : "";
 
   return (
-    <div className="flex flex-col items-center gap-1">
-      <div className="relative w-16 h-16">
-        <svg viewBox="0 0 64 64" className="w-full h-full -rotate-90">
+    <div className="flex flex-col items-center gap-1 shrink-0">
+      <div className="relative w-16 h-16 flex items-center justify-center">
+        <svg width="64" height="64" viewBox="0 0 64 64" className="-rotate-90">
           <circle
             cx="32"
             cy="32"
-            r="28"
+            r={radius}
             fill="none"
-            stroke="currentColor"
+            stroke="#1E293B"
             strokeWidth="4"
-            className="text-slate-800"
           />
           <circle
             cx="32"
             cy="32"
-            r="28"
+            r={radius}
             fill="none"
+            stroke={isLow ? "#F87171" : "#22D3EE"}
             strokeWidth="4"
             strokeDasharray={circumference}
-            strokeDashoffset={offset}
+            strokeDashoffset={dashOffset}
             strokeLinecap="round"
-            className={`${colorClass} transition-all duration-700 ease-linear`}
+            style={{
+              transition: "stroke-dashoffset 0.9s linear, stroke 0.3s",
+            }}
           />
         </svg>
-        <span className="absolute inset-0 flex items-center justify-center text-xs font-bold text-slate-200 tabular-nums">
-          {remaining}s
+        <span
+          className={`absolute text-base font-bold tabular-nums ${
+            isLow ? "text-red-400" : "text-[#E2E8F0]"
+          }`}
+        >
+          {timeText}
         </span>
       </div>
       {mode === "balanced" && (
@@ -79,8 +84,8 @@ export default function HintTimer() {
               key={i}
               className={`w-1.5 h-1.5 rounded-full transition-all duration-300 ${
                 i <= state.hintStage
-                  ? ["bg-slate-500", "bg-yellow-400", "bg-amber-400", "bg-red-400"][i]
-                  : "bg-slate-800"
+                  ? ["bg-cyan-400", "bg-amber-400", "bg-amber-400", "bg-red-400"][i]
+                  : "bg-[#334155]"
               }`}
             />
           ))}
@@ -88,7 +93,7 @@ export default function HintTimer() {
       )}
       {urgency && (
         <p
-          className={`text-[10px] font-medium text-center max-w-[80px] leading-tight ${
+          className={`text-[10px] font-medium text-center max-w-[88px] leading-tight ${
             remaining <= timeLimit * 0.3 ? "text-red-400" : "text-amber-400"
           }`}
         >

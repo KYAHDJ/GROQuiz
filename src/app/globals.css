@@ -1,9 +1,11 @@
+@import url("https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap");
+
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
 
 :root {
-  --color-accent: 16 185 129;
+  --color-accent: 34 211 238;
 }
 
 html {
@@ -11,11 +13,30 @@ html {
 }
 
 body {
-  background:
-    radial-gradient(ellipse 80% 50% at 50% -20%, rgba(16, 185, 129, 0.15), transparent),
-    radial-gradient(ellipse 60% 40% at 90% 110%, rgba(56, 189, 248, 0.1), transparent),
-    #020617;
+  background: #0f172a;
+  color: #e2e8f0;
+  font-family: "Inter", system-ui, -apple-system, "Segoe UI", sans-serif;
   background-attachment: fixed;
+}
+
+/* Fluid type — text scales with the viewport so it never clips on any screen size */
+.text-fluid-hero {
+  font-size: clamp(1.65rem, 2.4vw + 0.95rem, 2.4rem);
+  line-height: 1.15;
+  letter-spacing: -0.02em;
+}
+.text-fluid-title {
+  font-size: clamp(1.15rem, 0.9vw + 0.85rem, 1.4rem);
+  line-height: 1.25;
+}
+.text-fluid-base {
+  font-size: clamp(1rem, 0.4vw + 0.9rem, 1.125rem);
+  line-height: 1.5;
+}
+.text-fluid-grade {
+  font-size: clamp(1.9rem, 3vw + 1rem, 2.5rem);
+  line-height: 1.1;
+  letter-spacing: -0.02em;
 }
 
 .perspective-1200 {
@@ -56,12 +77,46 @@ body {
   }
 }
 
+@keyframes screen-enter {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes pulse-dot {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.35;
+  }
+}
+
 .animate-slide-up {
   animation: slide-up 0.3s ease-out;
 }
 
 .animate-pulse-hint {
   animation: pulse-hint 1.6s ease-in-out infinite;
+}
+
+.animate-pulse-dot {
+  animation: pulse-dot 1.8s ease-in-out infinite;
+}
+
+.screen-enter {
+  animation: screen-enter 0.35s ease-out;
+}
+
+.answer-eliminated {
+  text-decoration: line-through;
+  opacity: 0.45;
 }
 
 .no-scrollbar {
@@ -73,7 +128,7 @@ body {
 }
 
 ::selection {
-  background-color: rgba(16, 185, 129, 0.4);
+  background-color: rgba(34, 211, 238, 0.35);
 }
 
 ::-webkit-scrollbar {

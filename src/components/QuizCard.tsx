@@ -9,10 +9,12 @@ import {
   BrainCircuit,
   Zap,
   Clock,
-  Award,
+  Trophy,
+  Loader2,
 } from "lucide-react";
-import { useQuiz } from "@/context/QuizContext";
+import { useQuiz, DIFFICULTY_LABELS } from "@/context/QuizContext";
 import type { FlashcardQuestion } from "@/lib/types";
+import HintTimer from "./HintTimer";
 
 function highlightKeywords(text: string): React.ReactNode {
   const words = text.split(/(\s+)/);
@@ -28,7 +30,7 @@ function highlightKeywords(text: string): React.ReactNode {
           key={i}
           className={
             top5.has(w.toLowerCase().trim())
-              ? "text-yellow-300 font-semibold underline decoration-yellow-300/40 underline-offset-2"
+              ? "text-[#E2E8F0] font-semibold underline decoration-amber-400 decoration-2 underline-offset-2"
               : ""
           }
         >
@@ -164,224 +166,254 @@ export default function QuizCard() {
     setPowerupUsed(true);
   };
 
-  return (
-    <div className="w-full max-w-xl mx-auto px-4">
-      <div className="mb-1 text-center text-[11px] text-slate-500">
-        {hintStage >= 1 && !answered
-          ? "Hints active — score drops 25% per hint"
-          : "Answer fast for a bigger score"}
-      </div>
+  const progressPct = (state.currentIndex / Math.max(1, state.questions.length)) * 100;
+  const lastRetry = retryRound && state.currentIndex + 1 >= state.questions.length;
 
-      <div className="bg-slate-800/80 border border-slate-700/60 rounded-2xl p-6 sm:p-8 space-y-5">
-        <div className="flex items-center justify-between">
-          <p className="text-sm text-slate-500 font-medium">
-            {retryRound ? `Retry Q${state.currentIndex + 1}/${state.questions.length}` : `Q${state.currentIndex + 1}/${state.questions.length}`}
-          </p>
-          {answered && (
-            <span
-              className={`text-xs font-bold flex items-center gap-1.5 ${
-                isCorrectAnswer ? "text-emerald-400" : "text-red-400"
+  const badgeBase =
+    "w-7 h-7 shrink-0 rounded-lg border-2 flex items-center justify-center text-xs font-bold transition-all";
+
+  return (
+    <div className="space-y-4">
+      {/* Question card */}
+      <div className="bg-[#1E293B] rounded-2xl border border-[#334155] p-5 sm:p-6 space-y-5 screen-enter">
+        {/* Progress bar + timer row */}
+        <div className="flex items-center gap-4">
+          <div className="flex-1 h-1.5 bg-[#0F172A] rounded-full overflow-hidden">
+            <div
+              className={`h-full rounded-full transition-all duration-500 ${
+                mode === "hard" ? "bg-red-400" : "bg-cyan-400"
               }`}
-            >
-              {isCorrectAnswer ? <Check size={14} /> : <X size={14} />}
-              {isCorrectAnswer ? "Correct!" : "Incorrect"}
-            </span>
-          )}
+              style={{ width: `${progressPct}%` }}
+            />
+          </div>
+          <HintTimer />
+        </div>
+
+        {/* Tag row */}
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <span className="text-xs font-medium text-[#64748B] bg-[#0F172A] border border-[#334155] rounded-full px-3 py-1">
+            {retryRound
+              ? "Retry round"
+              : mode === "hard"
+                ? `Hard · ${DIFFICULTY_LABELS[4]}`
+                : DIFFICULTY_LABELS[state.stats.tier]}
+          </span>
+          <span className="text-xs text-amber-400/80">
+            {hintStage >= 1 && !answered
+              ? "Score drops 25% per hint"
+              : "Answer fast for a bigger score"}
+          </span>
         </div>
 
         {freezeActive && (
-          <div className="bg-cyan-500/10 border border-cyan-500/25 rounded-xl px-4 py-2 text-xs text-cyan-300 flex items-center gap-2">
+          <div className="bg-cyan-400/10 border border-cyan-400/30 rounded-xl px-4 py-2.5 text-xs text-cyan-300 flex items-center gap-2 screen-enter">
             <Clock size={13} className="shrink-0" />
             Timer frozen for 15 seconds — take your time!
           </div>
         )}
 
-        <h2 className="text-slate-100 text-lg sm:text-xl font-semibold leading-relaxed">
+        <h2 className="text-fluid-base font-semibold text-[#E2E8F0] leading-relaxed [overflow-wrap:anywhere]">
           {showKeywords ? highlightKeywords(q.question) : q.question}
         </h2>
 
         {showTip && (
-          <div className="bg-amber-500/10 border border-amber-500/25 rounded-xl px-4 py-3 text-xs sm:text-sm text-amber-200/90 animate-slide-up flex items-start gap-2">
+          <div className="flex items-start gap-3 bg-amber-400/10 border border-amber-400/30 rounded-xl p-4 animate-slide-up">
             <Lightbulb
-              size={14}
+              size={16}
               className="shrink-0 mt-0.5 text-amber-400 animate-pulse-hint"
             />
-            <span>{hintCache[q.id] ?? "Preparing hint…"}</span>
+            <p className="text-sm text-amber-300 leading-relaxed [overflow-wrap:anywhere]">
+              {hintCache[q.id] ?? "Preparing hint…"}
+            </p>
           </div>
         )}
 
         {fiftyActive && !answered && (
-          <div className="bg-slate-700/30 border border-slate-600/30 rounded-xl px-4 py-2 text-xs text-slate-400 flex items-center gap-2">
-            <Zap size={13} className="shrink-0 text-yellow-400" />
+          <div className="flex items-center gap-2 bg-amber-400/10 border border-amber-400/30 rounded-xl px-4 py-2.5 text-xs text-amber-300">
+            <Zap size={13} className="shrink-0" />
             Two options are out. One of the two remaining is correct — choose!
           </div>
         )}
 
-        <div className="grid grid-cols-1 gap-2.5">
+        {/* Answer options */}
+        <div className="space-y-2.5">
           {q.options.map((opt, i) => {
             const isShrunk = shrunk.has(i);
             const isSelected = selected === i;
             const isCorrect = i === q.correctIndex;
 
-            let optStyle =
-              "bg-slate-900/60 border-slate-700 hover:border-slate-500 hover:bg-slate-800/80 text-slate-200";
-            let extraClasses = "";
+            let rowClass =
+              "border-[#334155] bg-[#0F172A] text-[#94A3B8] hover:border-[#475569] hover:text-[#E2E8F0]";
+            let extra = "";
+            let badgeClass = `${badgeBase} border-[#334155] text-[#64748B]`;
 
             if (answered) {
               if (isCorrect) {
-                optStyle =
-                  "bg-emerald-500/15 border-emerald-500/50 text-emerald-300";
+                rowClass = "border-emerald-400 bg-emerald-400/10 text-emerald-400";
+                badgeClass = `${badgeBase} border-emerald-400 bg-emerald-400 text-[#0F172A]`;
               } else if (isSelected && !isCorrect) {
-                optStyle = "bg-red-500/15 border-red-500/50 text-red-300";
+                rowClass = "border-red-400 bg-red-400/10 text-red-400";
+                badgeClass = `${badgeBase} border-red-400 bg-red-400 text-[#0F172A]`;
               } else {
-                optStyle = "bg-slate-900/30 border-slate-800 text-slate-500";
+                rowClass = "border-[#334155] bg-[#0F172A] text-[#475569]";
               }
             } else if (isShrunk) {
-              optStyle = "bg-slate-900/40 border-slate-800 text-slate-500";
-              extraClasses = "opacity-45 scale-[0.9] py-1.5 text-xs";
+              rowClass =
+                "border-[#334155] bg-[#0F172A] text-[#475569] answer-eliminated cursor-not-allowed";
+              extra = "scale-[0.93] origin-left py-1.5 text-xs opacity-60";
             } else if (isSelected) {
-              optStyle = "bg-cyan-500/10 border-cyan-500/40 text-cyan-200";
+              rowClass = "border-cyan-400 bg-cyan-400/10 text-[#E2E8F0]";
+              badgeClass = `${badgeBase} border-cyan-400 bg-cyan-400 text-[#0F172A]`;
             }
 
             return (
               <button
                 key={i}
                 type="button"
-                disabled={answered}
+                disabled={answered || isShrunk}
                 onClick={() => selectAnswer(i)}
-                className={`relative text-left border rounded-xl px-4 py-3 text-sm sm:text-base transition-all duration-300 disabled:cursor-not-allowed ${optStyle} ${extraClasses}`}
+                className={`w-full flex items-center gap-4 px-4 py-3.5 rounded-xl border-2 text-left transition-all duration-200 text-sm font-medium ${rowClass} ${extra}`}
               >
-                <span
-                  className={`absolute left-3 top-1/2 -translate-y-1/2 w-6 h-6 rounded-full bg-slate-700/60 text-slate-400 flex items-center justify-center text-[10px] font-bold`}
-                >
-                  {String.fromCharCode(65 + i)}
+                <span className={badgeClass}>
+                  {answered && isCorrect ? (
+                    <Check size={14} strokeWidth={3} />
+                  ) : answered && isSelected && !isCorrect ? (
+                    <X size={14} strokeWidth={3} />
+                  ) : (
+                    String.fromCharCode(65 + i)
+                  )}
                 </span>
-                <span className={`pl-8 ${isShrunk && !answered ? "block truncate" : ""}`}>
+                <span className="flex-1 min-w-0 text-[15px] leading-snug [overflow-wrap:anywhere]">
                   {opt}
                 </span>
                 {answered && isCorrect && (
-                  <Check
-                    size={16}
-                    className="absolute right-3 top-1/2 -translate-y-1/2 text-emerald-400"
-                  />
+                  <span className="shrink-0">
+                    <Check size={17} strokeWidth={3} className="text-emerald-400" />
+                  </span>
                 )}
                 {answered && isSelected && !isCorrect && (
-                  <X
-                    size={16}
-                    className="absolute right-3 top-1/2 -translate-y-1/2 text-red-400"
-                  />
+                  <span className="shrink-0">
+                    <X size={17} strokeWidth={3} className="text-red-400" />
+                  </span>
                 )}
               </button>
             );
           })}
         </div>
 
-        {answered ? (
-          <div className="animate-slide-up space-y-4 border-t border-slate-700/60 pt-4">
+        {/* Answered block */}
+        {answered && (
+          <div className="space-y-3 border-t border-[#334155] pt-4 screen-enter">
             <div
               className={`rounded-xl px-4 py-3 text-sm font-semibold ${
                 isCorrectAnswer
-                  ? "bg-emerald-500/10 border border-emerald-500/30 text-emerald-300"
-                  : "bg-red-500/10 border border-red-500/30 text-red-300"
+                  ? "bg-emerald-400/10 border border-emerald-400/30 text-emerald-400"
+                  : "bg-red-400/10 border border-red-400/30 text-red-400"
               }`}
             >
               {isCorrectAnswer
                 ? "Correct! Nice work."
                 : `Incorrect — the answer was: ${q.options[q.correctIndex]}`}
-              <span className="ml-2 text-xs font-normal text-slate-400">
+              <span className="ml-2 text-xs font-normal text-[#64748B]">
                 answered in {state.elapsed}s
               </span>
             </div>
 
-            <div>
-              <p className="text-xs text-slate-500 mb-1.5 flex items-center gap-1.5">
-                <Award size={12} className="text-cyan-400" />
-                Explanation
-              </p>
-              <p className="text-sm text-slate-300 leading-relaxed">{q.explanation}</p>
+            <div className="flex gap-4 bg-[#0F172A] rounded-xl border border-[#334155] p-4">
+              <div className="w-10 h-10 shrink-0 rounded-xl bg-amber-400/10 flex items-center justify-center">
+                <Trophy size={20} className="text-amber-400" />
+              </div>
+              <div className="min-w-0">
+                <p className="text-sm font-semibold text-[#E2E8F0] mb-1">Explanation</p>
+                <p className="text-sm text-[#94A3B8] leading-relaxed [overflow-wrap:anywhere]">
+                  {q.explanation}
+                </p>
+              </div>
             </div>
-
-            <button
-              type="button"
-              onClick={nextQuestion}
-              className="w-full bg-cyan-600 hover:bg-cyan-500 text-white font-semibold rounded-xl py-3 transition-colors flex items-center justify-center gap-2"
-            >
-              Next Question
-              <ArrowRight size={16} />
-            </button>
           </div>
-        ) : (
+        )}
+      </div>
+
+      {/* Power-ups (balanced only, one per question) */}
+      {!answered && mode === "balanced" && !powerupUsed && (
+        <div className="flex gap-2 flex-wrap">
+          <button
+            type="button"
+            disabled={inventory["50-50"] <= 0 || fiftyActive}
+            onClick={handleUseFiftyFifty}
+            className="flex items-center gap-2 px-4 py-2 rounded-full border border-amber-400/40 bg-amber-400/10 text-amber-400 text-xs font-semibold hover:bg-amber-400/20 transition-all disabled:opacity-30 disabled:cursor-not-allowed"
+          >
+            <Zap size={14} />
+            50/50 <span className="opacity-60">×{inventory["50-50"]}</span>
+          </button>
+          <button
+            type="button"
+            disabled={inventory["time-extension"] <= 0 || freezeActive || timerPaused}
+            onClick={() => handleUsePowerup("time-extension")}
+            className="flex items-center gap-2 px-4 py-2 rounded-full border border-cyan-400/40 bg-cyan-400/10 text-cyan-400 text-xs font-semibold hover:bg-cyan-400/20 transition-all disabled:opacity-30 disabled:cursor-not-allowed"
+          >
+            <Clock size={14} />
+            {freezeActive ? "Frozen…" : "Freeze +15s"}{" "}
+            <span className="opacity-60">×{inventory["time-extension"]}</span>
+          </button>
+          <button
+            type="button"
+            disabled={inventory["ai-clarifier"] <= 0 || loadingClarify}
+            onClick={() => handleUsePowerup("ai-clarifier")}
+            className="flex items-center gap-2 px-4 py-2 rounded-full border border-violet-400/40 bg-violet-400/10 text-violet-400 text-xs font-semibold hover:bg-violet-400/20 transition-all disabled:opacity-30 disabled:cursor-not-allowed"
+          >
+            <BrainCircuit size={14} />
+            AI Clarifier <span className="opacity-60">×{inventory["ai-clarifier"]}</span>
+          </button>
+        </div>
+      )}
+
+      {/* AI Clarifier panel */}
+      {(loadingClarify || clarification) && (
+        <div className="bg-violet-500/10 border border-violet-400/30 rounded-2xl p-5 screen-enter space-y-2">
+          <div className="flex items-center gap-2">
+            <BrainCircuit size={16} className="text-violet-400" />
+            <span className="text-sm font-semibold text-violet-300">AI Clarifier</span>
+          </div>
+          <p className="text-sm text-[#94A3B8] leading-relaxed [overflow-wrap:anywhere]">
+            {loadingClarify ? (
+              <span className="flex items-center gap-2">
+                <Loader2 size={13} className="animate-spin text-violet-400" />
+                Explaining in simpler words…
+              </span>
+            ) : (
+              clarification
+            )}
+          </p>
+        </div>
+      )}
+
+      {/* Action button */}
+      <div className="pt-1">
+        {!answered ? (
           <button
             type="button"
             disabled={selected === null}
             onClick={confirmAnswer}
-            className="w-full bg-emerald-600 hover:bg-emerald-500 disabled:bg-slate-700 disabled:text-slate-500 text-white font-semibold rounded-xl py-3 transition-colors"
+            className="w-full py-4 rounded-2xl font-bold text-base transition-all duration-200 disabled:opacity-30 disabled:cursor-not-allowed bg-gradient-to-r from-cyan-600 via-cyan-500 to-violet-500 text-white hover:from-cyan-500 hover:via-cyan-400 hover:to-violet-400 shadow-lg shadow-cyan-500/20"
           >
             Confirm Answer
           </button>
+        ) : (
+          <button
+            type="button"
+            onClick={nextQuestion}
+            className={`w-full py-4 rounded-2xl font-bold text-base flex items-center justify-center gap-3 transition-all duration-200 ${
+              lastRetry
+                ? "bg-gradient-to-r from-emerald-600 to-emerald-500 text-white hover:from-emerald-500 hover:to-emerald-400 shadow-lg shadow-emerald-500/20"
+                : "bg-gradient-to-r from-cyan-600 via-cyan-500 to-cyan-400 text-[#0F172A] hover:from-cyan-500 hover:to-cyan-300 shadow-lg shadow-cyan-500/20"
+            }`}
+          >
+            {lastRetry ? "See Results" : "Next Question"}
+            <ArrowRight size={18} />
+          </button>
         )}
       </div>
-
-      {/* POWERUP BUTTONS — one powerup per question */}
-      {!answered && mode === "balanced" && !powerupUsed && (
-        <div className="mt-4 flex flex-wrap justify-center gap-2">
-          <PowerupButton
-            icon={<Zap size={14} className="text-yellow-400" />}
-            label="50/50"
-            count={inventory["50-50"]}
-            disabled={inventory["50-50"] <= 0 || fiftyActive}
-            onClick={handleUseFiftyFifty}
-          />
-          <PowerupButton
-            icon={<Clock size={14} className="text-cyan-400" />}
-            label={freezeActive ? "Frozen…" : "Freeze 15s"}
-            count={inventory["time-extension"]}
-            disabled={inventory["time-extension"] <= 0 || freezeActive || timerPaused}
-            onClick={() => handleUsePowerup("time-extension")}
-          />
-          <PowerupButton
-            icon={<BrainCircuit size={14} className="text-violet-400" />}
-            label="AI Clarifier"
-            count={inventory["ai-clarifier"]}
-            disabled={inventory["ai-clarifier"] <= 0 || loadingClarify}
-            onClick={() => handleUsePowerup("ai-clarifier")}
-          />
-        </div>
-      )}
-
-      {clarification && (
-        <div className="mt-3 bg-violet-500/10 border border-violet-500/25 rounded-xl px-4 py-3 text-sm text-violet-200/90 animate-slide-up max-w-xl mx-auto">
-          <span className="font-medium text-violet-300 block mb-1">AI Analogy</span>
-          {clarification}
-        </div>
-      )}
     </div>
-  );
-}
-
-function PowerupButton({
-  icon,
-  label,
-  count,
-  disabled,
-  onClick,
-}: {
-  icon: React.ReactNode;
-  label: string;
-  count: number;
-  disabled: boolean;
-  onClick: () => void;
-}) {
-  return (
-    <button
-      type="button"
-      disabled={disabled}
-      onClick={onClick}
-      className="flex items-center gap-1.5 bg-slate-800/80 hover:bg-slate-700/80 disabled:opacity-40 disabled:cursor-not-allowed border border-slate-700 rounded-xl px-3 py-2 text-xs font-medium text-slate-300 transition-all"
-    >
-      {icon}
-      <span>{label}</span>
-      <span className="text-slate-500">×{count}</span>
-    </button>
   );
 }

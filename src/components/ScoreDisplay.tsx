@@ -1,24 +1,106 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { ArrowLeft, Sparkles, Loader2, CheckCircle2, AlertCircle } from "lucide-react";
-import { useQuiz } from "@/context/QuizContext";
-import type { HistoryRecord } from "@/lib/types";
 import {
+  ArrowLeft,
+  Loader2,
+  RotateCcw,
   Target,
   Flame,
   Clock,
+  Lightbulb,
+  CheckCircle2,
   XCircle,
-  RotateCcw,
-  BarChart3,
-  TrendingUp,
   Zap,
+  Star,
 } from "lucide-react";
+import { useQuiz } from "@/context/QuizContext";
+import type { HistoryRecord } from "@/lib/types";
 
 interface CoachFeedback {
   strengths: string[];
   weaknesses: string[];
   feedback: string;
+}
+
+function BrandLogo({ size = 32 }: { size?: number }) {
+  return (
+    <div
+      style={{ width: size, height: size }}
+      className="rounded-lg bg-gradient-to-br from-cyan-400 to-violet-500 flex items-center justify-center shrink-0"
+    >
+      <svg width={size * 0.5} height={size * 0.5} fill="none" viewBox="0 0 16 16">
+        <path d="M8 1L10.5 6H15L11 9.5L12.5 15L8 12L3.5 15L5 9.5L1 6H5.5L8 1Z" fill="white" />
+      </svg>
+    </div>
+  );
+}
+
+function ScoreRing({ pct, pts }: { pct: number; pts: number }) {
+  const [displayed, setDisplayed] = useState(0);
+
+  useEffect(() => {
+    const end = Math.round(pct);
+    let frame: number;
+    let current = 0;
+    const step = () => {
+      current += 2;
+      if (current >= end) {
+        setDisplayed(end);
+        return;
+      }
+      setDisplayed(current);
+      frame = requestAnimationFrame(step);
+    };
+    frame = requestAnimationFrame(step);
+    return () => cancelAnimationFrame(frame);
+  }, [pct]);
+
+  const radius = 80;
+  const circumference = 2 * Math.PI * radius;
+  const dashOffset = circumference * (1 - pct / 100);
+
+  const ringColor =
+    pct >= 85
+      ? "#34D399"
+      : pct >= 60
+        ? "#22D3EE"
+        : pct >= 40
+          ? "#FBBF24"
+          : "#F87171";
+
+  return (
+    <div className="relative w-52 h-52 flex items-center justify-center mx-auto">
+      <svg width="208" height="208" viewBox="0 0 208 208" className="-rotate-90">
+        <circle
+          cx="104"
+          cy="104"
+          r={radius}
+          fill="none"
+          stroke="#1E293B"
+          strokeWidth="14"
+        />
+        <circle
+          cx="104"
+          cy="104"
+          r={radius}
+          fill="none"
+          stroke={ringColor}
+          strokeWidth="14"
+          strokeDasharray={circumference}
+          strokeDashoffset={dashOffset}
+          strokeLinecap="round"
+          style={{ transition: "stroke-dashoffset 1.4s cubic-bezier(0.4,0,0.2,1)" }}
+        />
+      </svg>
+      <div className="absolute text-center">
+        <p className="text-5xl font-extrabold text-[#E2E8F0] tabular-nums leading-none">
+          {displayed}%
+        </p>
+        <p className="text-xs text-[#64748B] mt-1 font-medium">{pts} pts</p>
+      </div>
+    </div>
+  );
 }
 
 export default function ScoreDisplay({
@@ -28,7 +110,7 @@ export default function ScoreDisplay({
   record?: HistoryRecord;
   onBack?: () => void;
 }) {
-  const { state, resetGame, setScreen } = useQuiz();
+  const { state, resetGame, restartQuiz } = useQuiz();
 
   const isReview = Boolean(record);
   const stats = record ? record.stats : state.stats;
@@ -50,6 +132,7 @@ export default function ScoreDisplay({
 
   const [coach, setCoach] = useState<CoachFeedback | null>(null);
   const [coachPending, setCoachPending] = useState(false);
+  const [coachNonce, setCoachNonce] = useState(0);
 
   useEffect(() => {
     if (results.length === 0 || coach) return;
@@ -69,183 +152,217 @@ export default function ScoreDisplay({
       )
       .catch(() => setCoach(null))
       .finally(() => setCoachPending(false));
-  }, [results, questions, stats, topic, coach]);
+  }, [results, questions, stats, topic, coach, coachNonce]);
 
   const grade =
     accuracy >= 90
-      ? "S"
-      : accuracy >= 80
-        ? "A"
-        : accuracy >= 65
-          ? "B"
-          : accuracy >= 50
-            ? "C"
-            : "D";
-  const gradeColor: Record<string, string> = {
-    S: "text-amber-400",
-    A: "text-emerald-400",
-    B: "text-cyan-400",
-    C: "text-amber-300",
-    D: "text-slate-400",
-  };
+      ? "Outstanding"
+      : accuracy >= 75
+        ? "Great work"
+        : accuracy >= 60
+          ? "Good job"
+          : "Keep practicing";
 
   return (
-    <div className="min-h-dvh flex flex-col items-center justify-center px-4 py-10">
-      <div className="text-center mb-8 max-w-md">
-        <div className="text-6xl sm:text-7xl font-extrabold mb-2">
-          <span className={gradeColor[grade] ?? "text-slate-300"}>{grade}</span>
-        </div>
-        <h2 className="text-2xl font-bold text-slate-100 mb-1">
-          {isReview ? "Session Review" : "Session Complete"}
-        </h2>
-        <p className="text-slate-400 text-sm">
-          {stats.correct}/{stats.answered} correct · {totalPoints} total points earned
-        </p>
-      </div>
-
-      {record && (
-        <button
-          onClick={onBack}
-          className="mb-6 flex items-center gap-2 text-sm text-slate-400 hover:text-cyan-300 transition-colors"
-        >
-          <ArrowLeft size={15} />
-          Back to home
-        </button>
-      )}
-
-      <div className="w-full max-w-md grid grid-cols-2 gap-3 mb-8">
-        <StatCard
-          icon={<Target size={16} className="text-emerald-400" />}
-          label="Accuracy"
-          value={`${accuracy}%`}
-        />
-        <StatCard
-          icon={<Flame size={16} className="text-orange-400" />}
-          label="Best Streak"
-          value={`${stats.bestStreak}`}
-        />
-        <StatCard
-          icon={<Clock size={16} className="text-cyan-400" />}
-          label="Avg Time"
-          value={`${avgTime}s`}
-        />
-        <StatCard
-          icon={<BarChart3 size={16} className="text-violet-400" />}
-          label="Avg Hints"
-          value={avgHints}
-        />
-      </div>
-
-      {/* AI Coach */}
-      <div className="w-full max-w-md mb-8 bg-slate-800/50 border border-violet-500/25 rounded-2xl p-4">
-        <p className="text-xs font-semibold text-violet-300 flex items-center gap-1.5 mb-3">
-          <Sparkles size={13} />
-          AI Coach Feedback
-        </p>
-        {coachPending ? (
-          <div className="flex items-center gap-2 text-xs text-slate-400">
-            <Loader2 size={14} className="animate-spin text-violet-400" />
-            Analyzing your answers…
-          </div>
-        ) : coach ? (
-          <div className="space-y-3 text-sm">
-            <div className="space-y-1.5">
-              <p className="text-[11px] font-medium text-emerald-400 flex items-center gap-1">
-                <CheckCircle2 size={11} /> Good stuff
-              </p>
-              {coach.strengths.length > 0 ? (
-                coach.strengths.map((s, i) => (
-                  <p key={i} className="text-slate-300 leading-snug">
-                    {s}
-                  </p>
-                ))
-              ) : (
-                <p className="text-slate-400">No strong areas yet — keep practicing!</p>
-              )}
-            </div>
-            <div className="space-y-1.5">
-              <p className="text-[11px] font-medium text-amber-400 flex items-center gap-1">
-                <AlertCircle size={11} /> Watch out for
-              </p>
-              {coach.weaknesses.length > 0 ? (
-                coach.weaknesses.map((w, i) => (
-                  <p key={i} className="text-slate-300 leading-snug">
-                    {w}
-                  </p>
-                ))
-              ) : (
-                <p className="text-slate-400">Nothing major — you're solid.</p>
-              )}
-            </div>
-            <p className="text-slate-200 leading-snug pt-1 border-t border-slate-700/60">
-              {coach.feedback}
-            </p>
-          </div>
-        ) : (
-          <p className="text-xs text-slate-400">
-            {results.length > 0
-              ? "Couldn't load the AI analysis right now."
-              : "Finish the quiz to get AI feedback."}
-          </p>
-        )}
-      </div>
-
-      <div className="w-full max-w-md space-y-2 mb-8">
-        <h3 className="text-sm font-medium text-slate-400 mb-2">Question Breakdown</h3>
-        {results.map((r, i) => {
-          const q = questions.find((x) => x.id === r.questionId);
-          return (
-            <div
-              key={r.questionId}
-              className={`flex items-start gap-3 px-4 py-3 rounded-xl border text-sm ${
-                r.correct
-                  ? "bg-emerald-500/5 border-emerald-500/20"
-                  : "bg-red-500/5 border-red-500/20"
-              }`}
+    <div className="min-h-dvh bg-[#0F172A] flex flex-col">
+      {/* Header */}
+      <header className="border-b border-[#334155] px-4 md:px-6 py-4 flex items-center justify-between gap-4">
+        <div className="flex items-center gap-3">
+          {isReview ? (
+            <button
+              onClick={onBack}
+              aria-label="Back to home"
+              className="w-9 h-9 rounded-xl border border-[#334155] flex items-center justify-center text-[#64748B] hover:text-[#E2E8F0] hover:border-[#475569] transition-all shrink-0"
             >
-              {r.correct ? (
-                <CheckCircle2 size={16} className="text-emerald-400 shrink-0 mt-0.5" />
-              ) : (
-                <XCircle size={16} className="text-red-400 shrink-0 mt-0.5" />
-              )}
-              <div className="flex-1 min-w-0">
-                <p className="text-slate-300 line-clamp-2 leading-snug">
-                  {q?.question ?? `Question ${i + 1}`}
-                </p>
-                <div className="flex gap-3 mt-1 text-xs text-slate-500">
-                  <span>{r.timeTaken}s</span>
-                  <span>+{r.pointsEarned} pts</span>
-                  {r.hintsUsed > 0 && (
-                    <span className="flex items-center gap-0.5">
-                      <Zap size={10} className="text-yellow-400" />
-                      {r.hintsUsed} hint{r.hintsUsed > 1 ? "s" : ""}
-                    </span>
-                  )}
-                </div>
+              <ArrowLeft size={16} />
+            </button>
+          ) : (
+            <BrandLogo />
+          )}
+          <span className="text-xl font-bold text-[#E2E8F0] tracking-tight">
+            {isReview ? "Review" : "GROQuiz"}
+          </span>
+        </div>
+        <span
+          className={`px-3 py-1.5 rounded-full text-xs font-bold border whitespace-nowrap ${
+            isReview
+              ? "border-violet-400/30 bg-violet-400/10 text-violet-400"
+              : state.mode === "hard"
+                ? "border-red-400/30 bg-red-400/10 text-red-400"
+                : "border-cyan-400/30 bg-cyan-400/10 text-cyan-400"
+          }`}
+        >
+          {isReview ? "History review" : state.mode === "hard" ? "Hard mode" : "Balanced mode"}
+        </span>
+      </header>
+
+      <main className="flex-1 max-w-xl mx-auto w-full px-4 py-8 sm:py-10 space-y-7 screen-enter">
+        {/* Grade label */}
+        <div className="text-center space-y-1">
+          <p className="text-sm font-semibold text-[#64748B] uppercase tracking-widest">
+            {isReview ? "Session review" : "Quiz complete"}
+          </p>
+          <h1 className="text-fluid-grade font-extrabold text-[#E2E8F0] [overflow-wrap:anywhere]">
+            {grade}!
+          </h1>
+          <p className="text-sm text-[#64748B]">
+            {stats.correct}/{stats.answered} correct · {topic || "Imported material"}
+          </p>
+        </div>
+
+        {/* Score ring */}
+        <ScoreRing pct={accuracy} pts={totalPoints} />
+
+        {/* Stat chips */}
+        <div className="grid grid-cols-2 gap-3">
+          <StatCard icon={<Target size={20} className="text-emerald-400" />} label="Accuracy" value={`${accuracy}%`} />
+          <StatCard icon={<Flame size={20} className="text-orange-400" />} label="Best streak" value={`${stats.bestStreak}`} />
+          <StatCard icon={<Clock size={20} className="text-cyan-400" />} label="Avg time" value={`${avgTime}s`} />
+          <StatCard icon={<Lightbulb size={20} className="text-amber-400" />} label="Avg hints" value={avgHints} />
+        </div>
+
+        {/* AI Coach card */}
+        <div className="bg-violet-500/10 border border-violet-400/30 rounded-2xl p-5 sm:p-6 space-y-4">
+          <div className="flex items-center justify-between gap-3 flex-wrap">
+            <div className="flex items-center gap-3">
+              <div className="w-9 h-9 rounded-xl bg-violet-400/20 flex items-center justify-center shrink-0">
+                <Lightbulb size={18} className="text-violet-400" />
+              </div>
+              <div>
+                <p className="text-sm font-bold text-violet-300">AI Coach</p>
+                <p className="text-xs text-[#64748B]">Personalized feedback</p>
               </div>
             </div>
-          );
-        })}
-      </div>
+            {coach && !isReview && (
+              <button
+                type="button"
+                onClick={() => {
+                  setCoach(null);
+                  setCoachNonce((n) => n + 1);
+                }}
+                className="flex items-center gap-1.5 text-xs text-violet-400 hover:text-violet-300 transition-colors"
+              >
+                <RotateCcw size={13} />
+                Refresh
+              </button>
+            )}
+          </div>
 
-      <div className="flex flex-col sm:flex-row gap-3 w-full max-w-md">
-        <button
-          onClick={() => {
-            resetGame();
-          }}
-          className="flex-1 flex items-center justify-center gap-2 bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-300 font-medium rounded-xl py-3 transition-colors"
-        >
-          <RotateCcw size={16} />
-          New Session
-        </button>
-        <button
-          onClick={() => (isReview && onBack ? onBack() : setScreen("landing"))}
-          className="flex-1 flex items-center justify-center gap-2 bg-emerald-600 hover:bg-emerald-500 text-white font-semibold rounded-xl py-3 transition-colors"
-        >
-          <TrendingUp size={16} />
-          {isReview ? "Back to Home" : "Change Source"}
-        </button>
-      </div>
+          {coachPending ? (
+            <div className="flex items-center gap-2 text-xs text-[#94A3B8]">
+              <Loader2 size={14} className="animate-spin text-violet-400" />
+              Analyzing your answers…
+            </div>
+          ) : coach ? (
+            <div className="space-y-4">
+              {coach.feedback && (
+                <p className="text-sm text-[#94A3B8] leading-relaxed [overflow-wrap:anywhere]">
+                  {coach.feedback}
+                </p>
+              )}
+              <div className="flex flex-wrap gap-2">
+                {coach.weaknesses.map((w, i) => (
+                  <span
+                    key={`w-${i}`}
+                    className="px-3 py-1 rounded-full text-xs bg-red-400/10 text-red-400 border border-red-400/20 [overflow-wrap:anywhere]"
+                  >
+                    Weak: {w}
+                  </span>
+                ))}
+                {coach.strengths.map((s, i) => (
+                  <span
+                    key={`s-${i}`}
+                    className="px-3 py-1 rounded-full text-xs bg-emerald-400/10 text-emerald-400 border border-emerald-400/20 [overflow-wrap:anywhere]"
+                  >
+                    Strong: {s}
+                  </span>
+                ))}
+              </div>
+            </div>
+          ) : (
+            <p className="text-xs text-[#64748B]">
+              {results.length > 0
+                ? "Couldn't load the AI analysis right now."
+                : "Finish the quiz to get AI feedback."}
+            </p>
+          )}
+        </div>
+
+        {/* Question breakdown */}
+        <div className="space-y-2">
+          <p className="text-xs font-semibold uppercase tracking-widest text-[#64748B]">
+            Question breakdown
+          </p>
+          {results.map((r, i) => {
+            const q = questions.find((x) => x.id === r.questionId);
+            return (
+              <div
+                key={r.questionId}
+                className={`flex items-start gap-3 px-4 py-3 rounded-xl border text-sm ${
+                  r.correct
+                    ? "bg-emerald-400/5 border-emerald-400/20"
+                    : "bg-red-400/5 border-red-400/20"
+                }`}
+              >
+                {r.correct ? (
+                  <CheckCircle2 size={16} className="text-emerald-400 shrink-0 mt-0.5" />
+                ) : (
+                  <XCircle size={16} className="text-red-400 shrink-0 mt-0.5" />
+                )}
+                <div className="flex-1 min-w-0">
+                  <p className="text-[#94A3B8] line-clamp-2 leading-snug [overflow-wrap:anywhere]">
+                    {q?.question ?? `Question ${i + 1}`}
+                  </p>
+                  <div className="flex gap-3 mt-1 text-xs text-[#64748B] flex-wrap">
+                    <span>{r.timeTaken}s</span>
+                    <span className="text-cyan-400">+{r.pointsEarned} pts</span>
+                    {r.hintsUsed > 0 && (
+                      <span className="flex items-center gap-0.5">
+                        <Zap size={10} className="text-amber-400" />
+                        {r.hintsUsed} hint{r.hintsUsed > 1 ? "s" : ""}
+                      </span>
+                    )}
+                  </div>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+
+        {/* Action buttons */}
+        {isReview ? (
+          <button
+            type="button"
+            onClick={onBack}
+            className="w-full py-4 rounded-2xl font-bold text-base border-2 border-[#334155] text-[#E2E8F0] hover:border-[#475569] hover:bg-[#1E293B] transition-all"
+          >
+            Back to Home
+          </button>
+        ) : (
+          <div className="flex flex-col sm:flex-row gap-3">
+            <button
+              type="button"
+              onClick={restartQuiz}
+              className="flex-1 py-4 rounded-2xl font-bold text-base bg-gradient-to-r from-cyan-600 to-cyan-400 text-[#0F172A] hover:from-cyan-500 hover:to-cyan-300 transition-all shadow-lg shadow-cyan-500/20"
+            >
+              Try Again
+            </button>
+            <button
+              type="button"
+              onClick={resetGame}
+              className="flex-1 py-4 rounded-2xl font-bold text-base border-2 border-[#334155] text-[#E2E8F0] hover:border-[#475569] hover:bg-[#1E293B] transition-all"
+            >
+              New Quiz
+            </button>
+          </div>
+        )}
+      </main>
+
+      {/* Footer credit */}
+      <footer className="text-center py-4 text-xs text-[#334155] flex items-center justify-center gap-1.5">
+        <Star size={10} className="text-violet-500" />
+        Built with Groq · GROQuiz
+      </footer>
     </div>
   );
 }
@@ -260,11 +377,11 @@ function StatCard({
   value: string;
 }) {
   return (
-    <div className="bg-slate-800/60 border border-slate-700/50 rounded-xl p-4 flex items-center gap-3">
-      {icon}
-      <div>
-        <p className="text-xs text-slate-500">{label}</p>
-        <p className="text-lg font-bold text-slate-100 tabular-nums">{value}</p>
+    <div className="bg-[#1E293B] border border-[#334155] rounded-2xl p-4 flex items-center gap-4">
+      <span className="shrink-0">{icon}</span>
+      <div className="min-w-0">
+        <p className="text-xl font-bold text-[#E2E8F0] tabular-nums">{value}</p>
+        <p className="text-xs text-[#64748B]">{label}</p>
       </div>
     </div>
   );

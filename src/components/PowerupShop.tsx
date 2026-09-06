@@ -41,7 +41,7 @@ export default function PowerupShop({
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm px-4">
-      <div className="bg-slate-900 border border-slate-700 rounded-2xl p-6 max-w-sm w-full relative animate-slide-up">
+      <div className="bg-[#1E293B] border border-[#334155] rounded-2xl p-6 max-w-sm w-full relative animate-slide-up">
         <button
           onClick={onClose}
           className="absolute top-4 right-4 text-slate-500 hover:text-slate-300 transition-colors"
@@ -51,11 +51,11 @@ export default function PowerupShop({
 
         <div className="flex items-center gap-2 mb-4">
           <ShoppingBag size={18} className="text-emerald-400" />
-          <h3 className="text-lg font-bold text-slate-100">Power-up Shop</h3>
+          <h3 className="text-lg font-bold text-[#E2E8F0]">Power-up Shop</h3>
         </div>
 
-        <div className="flex items-center gap-2 mb-5 bg-slate-800/60 rounded-xl px-3 py-2">
-          <span className="text-xs text-slate-400">Your Points</span>
+        <div className="flex items-center gap-2 mb-5 bg-[#0F172A] rounded-xl px-3 py-2">
+          <span className="text-xs text-[#64748B]">Your Points</span>
           <span className="font-bold text-amber-400">{stats.points}</span>
         </div>
 
@@ -69,20 +69,20 @@ export default function PowerupShop({
                 onClick={() => {
                   buyPowerup(p.key, p.cost);
                 }}
-                className="w-full flex items-start gap-3 bg-slate-800/60 hover:bg-slate-800 disabled:opacity-40 disabled:cursor-not-allowed border border-slate-700 rounded-xl p-3 text-left transition-colors"
+                className="w-full flex items-start gap-3 bg-[#0F172A] hover:bg-[#16202F] disabled:opacity-40 disabled:cursor-not-allowed border border-[#334155] rounded-xl p-3 text-left transition-colors"
               >
                 <div className="mt-0.5">{p.icon}</div>
-                <div className="flex-1">
-                  <div className="flex items-center justify-between">
-                    <span className="font-semibold text-sm text-slate-200">
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="font-semibold text-sm text-[#E2E8F0]">
                       {p.name}
                     </span>
-                    <span className="text-xs font-medium text-slate-400 bg-slate-700/50 rounded-full px-2 py-0.5">
+                    <span className="text-xs font-medium text-[#94A3B8] bg-[#334155] rounded-full px-2 py-0.5 whitespace-nowrap">
                       {p.cost} pts
                     </span>
                   </div>
-                  <p className="text-xs text-slate-500 mt-0.5">{p.desc}</p>
-                  <p className="text-[10px] text-slate-600 mt-1">
+                  <p className="text-xs text-[#64748B] mt-0.5">{p.desc}</p>
+                  <p className="text-[10px] text-[#475569] mt-1">
                     Owned: {inventory[p.key]}
                   </p>
                 </div>

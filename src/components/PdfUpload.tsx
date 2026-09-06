@@ -5,13 +5,14 @@ import {
   Upload,
   FileText,
   Loader2,
-  History,
   ChevronRight,
   ClipboardPaste,
   X,
   Scale,
   Lock,
-  Clock4,
+  Check,
+  Trash2,
+  Star,
 } from "lucide-react";
 import { useQuiz } from "@/context/QuizContext";
 import type {
@@ -22,6 +23,19 @@ import type {
 
 const MAX_PDF_MB = 4;
 const TIME_OPTIONS = [15, 30, 45, 60, 90];
+
+function BrandLogo({ size = 36 }: { size?: number }) {
+  return (
+    <div
+      style={{ width: size, height: size }}
+      className="rounded-lg bg-gradient-to-br from-cyan-400 to-violet-500 flex items-center justify-center shrink-0"
+    >
+      <svg width={size * 0.5} height={size * 0.5} fill="none" viewBox="0 0 16 16">
+        <path d="M8 1L10.5 6H15L11 9.5L12.5 15L8 12L3.5 15L5 9.5L1 6H5.5L8 1Z" fill="white" />
+      </svg>
+    </div>
+  );
+}
 
 export default function PdfUpload({
   onReview,
@@ -38,9 +52,20 @@ export default function PdfUpload({
     hasSavedGame,
     resumeGame,
     history,
+    deleteHistory,
   } = useQuiz();
   const fileRef = useRef<HTMLInputElement>(null);
   const [groqCount, setGroqCount] = useState<number | null>(null);
+  const [mode, setModeLocal] = useState<QuizMode>(state.mode);
+  const [fileName, setFileName] = useState<string | null>(null);
+  const [progress, setProgress] = useState<number | null>(null);
+  const [progressLabel, setProgressLabel] = useState("");
+  const [topics, setTopics] = useState("");
+  const [pastedText, setPastedText] = useState("");
+  const [inputMode, setInputMode] = useState<"upload" | "paste">("upload");
+  const [isDragging, setIsDragging] = useState(false);
+  const [showAll, setShowAll] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -69,14 +94,6 @@ export default function PdfUpload({
       window.removeEventListener("focus", onFocus);
     };
   }, []);
-  const [mode, setModeLocal] = useState<QuizMode>(state.mode);
-  const [fileName, setFileName] = useState<string | null>(null);
-  const [progress, setProgress] = useState<number | null>(null);
-  const [progressLabel, setProgressLabel] = useState("");
-  const [topics, setTopics] = useState("");
-  const [pastedText, setPastedText] = useState("");
-  const [showPaste, setShowPaste] = useState(false);
-  const [error, setError] = useState<string | null>(null);
 
   const clearError = () => setError(null);
 
@@ -147,7 +164,7 @@ export default function PdfUpload({
       setError(
         `That PDF is ${(file.size / 1024 / 1024).toFixed(1)} MB — the free host accepts up to ${MAX_PDF_MB} MB. Use a smaller PDF or paste the text below instead.`
       );
-      setShowPaste(true);
+      setInputMode("paste");
       return;
     }
 
@@ -168,7 +185,6 @@ export default function PdfUpload({
       if (!parseRes.ok) {
         setProgress(null);
         setError(parseData.error ?? "We couldn't read that PDF.");
-        setShowPaste(true);
         return;
       }
 
@@ -183,15 +199,11 @@ export default function PdfUpload({
           ? `This PDF is larger than the ${MAX_PDF_MB} MB the host allows. Paste the text below instead.`
           : "Something went wrong while uploading. Please try again."
       );
-      setShowPaste(true);
+      setInputMode("paste");
     }
   };
 
   const handleGenerate = async () => {
-    if (topics.trim().length < 3) {
-      setError("Enter a topic for your material to continue.");
-      return;
-    }
     if (pastedText.trim().length === 0) {
       setError("Paste some text first — that's what the questions come from.");
       return;
@@ -200,18 +212,29 @@ export default function PdfUpload({
   };
 
   const active = progress !== null;
+  const visibleHistory = showAll ? history : history.slice(0, 5);
+  const accFor = (r: HistoryRecord) => {
+    const total = r.results.length || r.stats.answered;
+    const correct = r.results.filter((x) => x.correct).length || r.stats.correct;
+    return total ? Math.round((correct / total) * 100) : 0;
+  };
 
   return (
-    <div className="w-full max-w-2xl mx-auto space-y-4">
-      {/* Groq status */}
-      <div className="flex items-center justify-center">
-        <span
-          className={`inline-flex items-center gap-2 rounded-full px-3 py-1.5 text-xs font-medium border ${
+    <div className="min-h-full bg-[#0F172A] pb-16">
+      {/* Top nav bar */}
+      <header className="sticky top-0 z-30 bg-[#0F172A]/95 backdrop-blur-sm border-b border-[#334155] px-4 md:px-6 py-4 flex flex-wrap items-center justify-between gap-3">
+        <div className="flex items-center gap-3">
+          <BrandLogo />
+          <span className="text-xl font-bold text-[#E2E8F0] tracking-tight">GROQuiz</span>
+        </div>
+
+        <div
+          className={`flex items-center gap-2 rounded-full border px-4 py-1.5 transition-colors ${
             groqCount === null
-              ? "border-slate-700 text-slate-500"
+              ? "bg-[#1E293B] border-[#334155]"
               : groqCount > 0
-                ? "border-emerald-500/30 bg-emerald-500/10 text-emerald-300"
-                : "border-red-500/30 bg-red-500/10 text-red-300"
+                ? "bg-[#1E293B] border-[#334155]"
+                : "bg-red-500/10 border-red-400/30"
           }`}
         >
           <span
@@ -219,263 +242,404 @@ export default function PdfUpload({
               groqCount === null
                 ? "bg-slate-500"
                 : groqCount > 0
-                  ? "bg-emerald-400 animate-pulse"
+                  ? "bg-emerald-400 animate-pulse-dot"
                   : "bg-red-400"
             }`}
           />
-          {groqCount === null
-            ? "Checking AI keys…"
-            : groqCount > 0
-              ? `Groq ready — ${groqCount} key${groqCount === 1 ? "" : "s"} connected`
-              : "Groq not connected — add GROQ_API_KEY to start"}
-        </span>
-      </div>
+          <span className="text-sm text-[#E2E8F0] whitespace-nowrap">
+            {groqCount === null ? (
+              <span className="text-[#94A3B8]">Checking AI keys…</span>
+            ) : groqCount > 0 ? (
+              <>
+                Groq ready —{" "}
+                <span className="font-semibold text-emerald-400">
+                  {groqCount} {groqCount === 1 ? "key" : "keys"}
+                </span>{" "}
+                connected
+              </>
+            ) : (
+              <span className="text-red-400 font-medium">Groq not connected</span>
+            )}
+          </span>
+        </div>
+      </header>
 
-      {/* Mode selector */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-        <button
-          type="button"
-          onClick={() => {
-            setModeLocal("balanced");
-            setMode("balanced");
-          }}
-          className={`rounded-2xl border p-4 text-left transition-all ${
-            mode === "balanced"
-              ? "border-cyan-500/60 bg-cyan-500/10 ring-1 ring-cyan-500/40"
-              : "border-slate-700 bg-slate-800/40 hover:bg-slate-700/40"
-          }`}
-        >
-          <span className="flex items-center gap-2 text-sm font-semibold text-slate-100">
-            <Scale size={15} className="text-cyan-400" />
-            Balanced mode
-          </span>
-          <span className="block text-xs text-slate-400 mt-1">
-            Starts Medium and gets Easier/Harder based on your answers.
-          </span>
-        </button>
-        <button
-          type="button"
-          onClick={() => {
-            setModeLocal("hard");
-            setMode("hard");
-          }}
-          className={`rounded-2xl border p-4 text-left transition-all ${
-            mode === "hard"
-              ? "border-red-500/60 bg-red-500/10 ring-1 ring-red-500/40"
-              : "border-slate-700 bg-slate-800/40 hover:bg-slate-700/40"
-          }`}
-        >
-          <span className="flex items-center gap-2 text-sm font-semibold text-slate-100">
-            <Lock size={15} className="text-red-400" />
-            Hard mode
-          </span>
-          <span className="block text-xs text-slate-400 mt-1">
-            Locked at Hard — no power-ups, just you and the questions.
-          </span>
-        </button>
-      </div>
-
-      {/* Time limit */}
-      <div className="bg-slate-800/40 border border-slate-700/60 rounded-2xl p-4">
-        <p className="text-xs font-medium text-slate-400 mb-2">
-          {mode === "hard"
-            ? "Time per question"
-            : "Pick your time limit per question"}
-        </p>
-        {mode === "hard" ? (
-          <p className="text-sm text-slate-300 font-semibold flex items-center gap-2">
-            <Clock4 size={15} className="text-red-400" />
-            30 seconds — fixed in Hard mode
+      <main className="max-w-[672px] mx-auto px-4 pt-8 sm:pt-10 space-y-6 sm:space-y-8 screen-enter">
+        {/* Hero */}
+        <div className="text-center space-y-2">
+          <h1 className="text-fluid-hero font-extrabold text-[#E2E8F0] tracking-tight [overflow-wrap:anywhere]">
+            Turn any PDF into a{" "}
+            <span className="text-transparent bg-clip-text bg-gradient-to-r from-cyan-400 to-violet-400">
+              quiz in seconds
+            </span>
+          </h1>
+          <p className="text-fluid-base text-[#94A3B8]">
+            Upload a PDF or paste text — Groq AI generates multiple-choice flashcards
+            instantly.
           </p>
-        ) : (
-          <div className="flex flex-wrap gap-2">
-            {TIME_OPTIONS.map((s) => {
-              const active = state.timeLimit === s;
+        </div>
+
+        {/* Mode cards */}
+        <div className="space-y-3">
+          <p className="text-xs font-semibold uppercase tracking-widest text-[#64748B]">
+            Select mode
+          </p>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <button
+              type="button"
+              onClick={() => {
+                setModeLocal("balanced");
+                setMode("balanced");
+              }}
+              className={`relative p-5 rounded-2xl border-2 text-left transition-all duration-200 ${
+                mode === "balanced"
+                  ? "border-cyan-400 bg-cyan-400/10"
+                  : "border-[#334155] bg-[#1E293B] hover:border-[#475569]"
+              }`}
+            >
+              {mode === "balanced" && (
+                <span className="absolute top-3 right-3 w-5 h-5 rounded-full bg-cyan-400 flex items-center justify-center">
+                  <Check size={12} strokeWidth={3} className="text-[#0F172A]" />
+                </span>
+              )}
+              <div className="w-10 h-10 rounded-xl bg-cyan-400/20 flex items-center justify-center mb-3">
+                <Scale size={20} className="text-cyan-400" />
+              </div>
+              <p className="font-bold text-[#E2E8F0] text-sm mb-1">Balanced</p>
+              <p className="text-[#64748B] text-xs leading-relaxed">
+                Starts Medium and adjusts to your answers
+              </p>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => {
+                setModeLocal("hard");
+                setMode("hard");
+              }}
+              className={`relative p-5 rounded-2xl border-2 text-left transition-all duration-200 ${
+                mode === "hard"
+                  ? "border-red-400 bg-red-400/10"
+                  : "border-[#334155] bg-[#1E293B] hover:border-[#475569]"
+              }`}
+            >
+              {mode === "hard" && (
+                <span className="absolute top-3 right-3 w-5 h-5 rounded-full bg-red-400 flex items-center justify-center">
+                  <Check size={12} strokeWidth={3} className="text-[#0F172A]" />
+                </span>
+              )}
+              <div className="w-10 h-10 rounded-xl bg-red-400/20 flex items-center justify-center mb-3">
+                <Lock size={20} className="text-red-400" />
+              </div>
+              <p className="font-bold text-[#E2E8F0] text-sm mb-1">Hard</p>
+              <p className="text-[#64748B] text-xs leading-relaxed">
+                Locked at Hard — no power-ups, fixed 30s each
+              </p>
+            </button>
+          </div>
+        </div>
+
+        {/* Time limit */}
+        <div className="space-y-3 bg-[#1E293B] rounded-2xl p-5 border border-[#334155]">
+          <p className="text-sm font-semibold text-[#E2E8F0]">
+            {mode === "hard" ? "Time per question" : "Pick your time limit per question"}
+          </p>
+          <div className="flex gap-2 flex-wrap">
+            {TIME_OPTIONS.map((t) => {
+              const on =
+                mode === "hard" ? t === 30 : state.timeLimit === t;
+              const isFixed = mode === "hard";
               return (
                 <button
-                  key={s}
+                  key={t}
                   type="button"
-                  onClick={() => setTimeLimit(s)}
-                  className={`rounded-xl px-4 py-2 text-sm font-semibold border transition-all ${
-                    active
-                      ? "bg-cyan-600 text-white border-cyan-500"
-                      : "bg-slate-900/60 text-slate-300 border-slate-700 hover:border-cyan-500/50 hover:text-slate-100"
-                  }`}
+                  onClick={() => !isFixed && setTimeLimit(t)}
+                  className={`px-4 py-1.5 rounded-full text-sm font-medium transition-all duration-150 ${
+                    on
+                      ? "bg-cyan-400 text-[#0F172A] font-bold"
+                      : "bg-[#0F172A] border border-[#334155] text-[#94A3B8] hover:border-cyan-400/50 hover:text-[#E2E8F0]"
+                  } ${isFixed && !on ? "opacity-40 cursor-not-allowed" : ""}`}
+                  title={isFixed ? "Fixed at 30s in Hard mode" : `${t} seconds per question`}
                 >
-                  {s}s
+                  {t}s
                 </button>
               );
             })}
-            <span className="text-xs text-slate-500 self-center ml-1">
-              Time out = marked wrong, then a retry at the end.
-            </span>
+          </div>
+          <p className="text-xs text-[#64748B]">
+            Time out = marked wrong, then a retry at the end.
+          </p>
+        </div>
+
+        {hasSavedGame && state.screen === "landing" && (
+          <div className="bg-cyan-400/10 border border-cyan-400/30 rounded-2xl px-5 py-3 flex items-center justify-between gap-3">
+            <p className="text-sm text-cyan-300 [overflow-wrap:anywhere]">
+              You have an unfinished quiz on{" "}
+              <span className="font-semibold">{state.currentTopics || "your material"}</span>.
+            </p>
+            <button
+              type="button"
+              onClick={resumeGame}
+              className="shrink-0 bg-gradient-to-r from-cyan-500 to-cyan-400 text-[#0F172A] font-bold text-sm rounded-xl px-4 py-2 transition-all hover:from-cyan-400 hover:to-cyan-300"
+            >
+              Resume
+            </button>
           </div>
         )}
-      </div>
 
-      {hasSavedGame && state.screen === "landing" && (
-        <div className="bg-cyan-500/10 border border-cyan-500/25 rounded-2xl px-4 py-3 flex items-center justify-between gap-3">
-          <p className="text-sm text-cyan-200">
-            You have an unfinished quiz on{" "}
-            <span className="font-semibold">{state.currentTopics || "your material"}</span>.
-          </p>
+        {error && (
+          <div className="bg-red-500/10 border border-red-400/30 rounded-2xl px-4 py-3 text-sm text-red-300 flex items-start gap-2">
+            <span className="flex-1 [overflow-wrap:anywhere]">{error}</span>
+            <button
+              type="button"
+              onClick={clearError}
+              className="text-red-400 hover:text-red-200 font-medium text-xs shrink-0"
+            >
+              Dismiss
+            </button>
+          </div>
+        )}
+
+        {/* Input toggle */}
+        <div className="flex gap-1 bg-[#1E293B] rounded-xl p-1 border border-[#334155]">
           <button
             type="button"
-            onClick={resumeGame}
-            className="shrink-0 bg-cyan-600 hover:bg-cyan-500 text-white text-sm font-semibold rounded-xl px-4 py-2 transition-colors"
+            onClick={() => setInputMode("upload")}
+            className={`flex-1 py-2 rounded-lg text-sm font-medium transition-all duration-150 ${
+              inputMode === "upload"
+                ? "bg-[#334155] text-[#E2E8F0]"
+                : "text-[#64748B] hover:text-[#94A3B8]"
+            }`}
           >
-            Resume
+            Upload PDF
           </button>
-        </div>
-      )}
-
-      {error && (
-        <div className="bg-red-500/10 border border-red-500/30 rounded-2xl px-4 py-3 text-sm text-red-300 flex items-start gap-2">
-          <span className="flex-1">{error}</span>
           <button
             type="button"
-            onClick={clearError}
-            className="text-red-400 hover:text-red-200 font-medium text-xs"
+            onClick={() => setInputMode("paste")}
+            className={`flex-1 py-2 rounded-lg text-sm font-medium transition-all duration-150 ${
+              inputMode === "paste"
+                ? "bg-[#334155] text-[#E2E8F0]"
+                : "text-[#64748B] hover:text-[#94A3B8]"
+            }`}
           >
-            Dismiss
+            Paste Text
           </button>
         </div>
-      )}
 
-      <div
-        onDragOver={(e) => e.preventDefault()}
-        onDrop={(e) => {
-          e.preventDefault();
-          const f = e.dataTransfer.files?.[0];
-          if (f) handleFile(f);
-        }}
-        onClick={() => !active && fileRef.current?.click()}
-        className="cursor-pointer border-2 border-dashed border-slate-700 hover:border-cyan-500/60 hover:bg-slate-800/40 rounded-2xl p-8 sm:p-12 flex flex-col items-center justify-center gap-3 transition-all"
-      >
-        <input
-          ref={fileRef}
-          type="file"
-          accept="application/pdf"
-          className="hidden"
-          onChange={(e) => {
-            const f = e.target.files?.[0];
-            if (f) handleFile(f);
-          }}
-        />
+        {inputMode === "upload" ? (
+          <div
+            onDragOver={(e) => {
+              e.preventDefault();
+              setIsDragging(true);
+            }}
+            onDragLeave={() => setIsDragging(false)}
+            onDrop={(e) => {
+              e.preventDefault();
+              setIsDragging(false);
+              const f = e.dataTransfer.files?.[0];
+              if (f && !active) handleFile(f);
+            }}
+            onClick={() => !active && fileRef.current?.click()}
+            className={`rounded-2xl border-2 border-dashed p-8 sm:p-10 md:p-12 flex flex-col items-center gap-4 transition-all duration-200 cursor-pointer ${
+              isDragging || active
+                ? "border-cyan-400 bg-cyan-400/10"
+                : "border-[#334155] bg-[#1E293B] hover:border-[#475569]"
+            }`}
+          >
+            <input
+              ref={fileRef}
+              type="file"
+              accept="application/pdf"
+              className="hidden"
+              onChange={(e) => {
+                const f = e.target.files?.[0];
+                if (f) handleFile(f);
+              }}
+            />
 
-        {progress !== null ? (
-          <>
-            <Loader2 size={28} className="text-cyan-400 animate-spin" />
-            {fileName && (
-              <p className="text-sm text-slate-300 font-medium truncate max-w-full flex items-center gap-2">
-                <FileText size={14} className="shrink-0 text-cyan-400" />
-                <span className="truncate">{fileName}</span>
-              </p>
+            {progress !== null ? (
+              <>
+                <Loader2 size={32} className="text-cyan-400 animate-spin" />
+                {fileName && (
+                  <p className="text-sm text-[#E2E8F0] font-medium flex items-center gap-2 [overflow-wrap:anywhere]">
+                    <FileText size={14} className="shrink-0 text-cyan-400" />
+                    <span>{fileName}</span>
+                  </p>
+                )}
+                <p className="text-xs text-cyan-400">{progressLabel}</p>
+                <div className="w-full max-w-xs h-1.5 bg-[#0F172A] rounded-full overflow-hidden">
+                  <div
+                    className="h-full bg-gradient-to-r from-cyan-500 to-violet-500 rounded-full transition-all duration-300"
+                    style={{ width: `${progress}%` }}
+                  />
+                </div>
+              </>
+            ) : (
+              <>
+                <div className={`w-16 h-16 rounded-2xl flex items-center justify-center transition-colors ${isDragging ? "bg-cyan-400/20" : "bg-[#0F172A]"}`}>
+                  <Upload size={32} className={isDragging ? "text-cyan-400" : "text-[#475569]"} />
+                </div>
+                <div className="text-center">
+                  <p className="text-[#94A3B8] font-medium [overflow-wrap:anywhere]">
+                    Drag & drop your PDF here
+                  </p>
+                  <p className="text-sm text-[#64748B] mt-1">
+                    or{" "}
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setInputMode("paste");
+                      }}
+                      className="text-cyan-400 hover:underline"
+                    >
+                      paste text instead
+                    </button>
+                  </p>
+                  <p className="text-xs text-[#64748B] mt-3">
+                    Text is extracted on the fly — your document is never stored. Max{" "}
+                    {MAX_PDF_MB} MB.
+                  </p>
+                </div>
+                <span className="mt-1 px-6 py-2.5 rounded-xl bg-[#0F172A] border border-[#334155] text-sm text-[#94A3B8] hover:border-cyan-400/60 hover:text-[#E2E8F0] transition-all cursor-pointer">
+                  Browse files
+                </span>
+              </>
             )}
-            <p className="text-xs text-cyan-300">{progressLabel}</p>
-            <div className="w-full max-w-xs h-1.5 bg-slate-800 rounded-full overflow-hidden">
-              <div
-                className="h-full bg-cyan-500 rounded-full transition-all duration-300"
-                style={{ width: `${progress}%` }}
+          </div>
+        ) : (
+          <div className="bg-[#1E293B] rounded-2xl border border-[#334155] p-5 space-y-4 screen-enter">
+            <div className="space-y-2">
+              <label className="text-xs font-semibold text-[#94A3B8] uppercase tracking-wider">
+                Your text
+              </label>
+              <textarea
+                value={pastedText}
+                onChange={(e) => setPastedText(e.target.value)}
+                placeholder="Paste your notes, article, or study material here…"
+                rows={7}
+                className="w-full bg-[#0F172A] border border-[#334155] rounded-xl px-4 py-3 text-sm text-[#E2E8F0] placeholder-[#475569] focus:outline-none focus:border-cyan-400/60 transition-colors [overflow-wrap:anywhere]"
+              />
+              <div className="flex items-center justify-between gap-3 flex-wrap">
+                <p className="text-xs text-[#64748B]">{pastedText.length} characters</p>
+                <button
+                  type="button"
+                  onClick={() =>
+                    navigator.clipboard
+                      .readText()
+                      .then((t) => t && setPastedText(t))
+                      .catch(() => {})
+                  }
+                  className="flex items-center gap-2 text-xs text-cyan-400 hover:text-cyan-300 transition-colors"
+                >
+                  <ClipboardPaste size={14} />
+                  Paste from clipboard
+                </button>
+              </div>
+            </div>
+
+            <div className="space-y-2">
+              <label className="text-xs font-semibold text-[#94A3B8] uppercase tracking-wider">
+                Topic (optional)
+              </label>
+              <input
+                value={topics}
+                onChange={(e) => setTopics(e.target.value)}
+                placeholder="e.g. Cellular Respiration"
+                className="w-full bg-[#0F172A] border border-[#334155] rounded-xl px-4 py-3 text-sm text-[#E2E8F0] placeholder-[#475569] focus:outline-none focus:border-cyan-400/60 transition-colors"
               />
             </div>
-          </>
-        ) : (
-          <>
-            <Upload size={32} className="text-slate-500" />
-            <p className="text-sm sm:text-base text-slate-300 font-medium">
-              Upload a PDF to generate questions
-            </p>
-            <p className="text-xs text-slate-500 text-center">
-              Text is extracted on the fly — your document is never stored.
-              <br />
-              Max {MAX_PDF_MB} MB. Scanned/image-only PDFs can't be read — paste the text below instead.
-            </p>
-          </>
-        )}
-      </div>
 
-      {/* Topic input */}
-      <div className="bg-slate-800/40 border border-slate-700/60 rounded-2xl p-4 space-y-3">
-        <label htmlFor="topics" className="block text-xs font-medium text-slate-400">
-          What is this material about?
-        </label>
-        <input
-          id="topics"
-          type="text"
-          value={topics}
-          onChange={(e) => setTopics(e.target.value)}
-          placeholder="e.g. Photosynthesis for high school biology"
-          className="w-full bg-slate-900/60 border border-slate-700 rounded-xl px-4 py-2.5 text-sm text-slate-200 placeholder-slate-600 focus:outline-none focus:border-cyan-500/50"
-        />
-      </div>
-
-      {/* Paste-text fallback */}
-      <div className="bg-slate-800/40 border border-slate-700/60 rounded-2xl overflow-hidden">
-        <button
-          type="button"
-          onClick={() => setShowPaste((v) => !v)}
-          className="w-full flex items-center justify-between gap-2 px-4 py-3 text-sm text-slate-300 hover:bg-slate-700/40 transition-colors"
-        >
-          <span className="flex items-center gap-2">
-            <ClipboardPaste size={15} className="text-cyan-400" />
-            <span className="font-medium">
-              {showPaste ? "Hide" : "PDF not working?"} Paste the text instead
-            </span>
-          </span>
-          {showPaste ? <X size={15} className="text-slate-500" /> : <ChevronRight size={15} className="text-slate-500" />}
-        </button>
-
-        {showPaste && (
-          <div className="px-4 pb-4 space-y-3 animate-slide-up">
-            <textarea
-              value={pastedText}
-              onChange={(e) => setPastedText(e.target.value)}
-              rows={7}
-              placeholder="Paste the text of your notes, article, or chapter here…"
-              className="w-full bg-slate-900/60 border border-slate-700 rounded-xl px-3 py-2.5 text-sm text-slate-200 placeholder-slate-600 focus:outline-none focus:border-cyan-500/50 resize-y"
-            />
-            <div className="text-xs text-slate-500 -mt-1">{pastedText.length} characters</div>
             <button
               type="button"
               onClick={handleGenerate}
-              disabled={active}
-              className="w-full bg-cyan-600 hover:bg-cyan-500 disabled:opacity-50 text-white text-sm font-medium rounded-xl py-2.5 transition-colors"
+              disabled={active || pastedText.trim().length < 20}
+              className="w-full py-3 rounded-xl font-semibold text-sm transition-all duration-200 disabled:opacity-40 disabled:cursor-not-allowed bg-gradient-to-r from-cyan-500 to-cyan-400 text-[#0F172A] hover:from-cyan-400 hover:to-cyan-300 shadow-lg shadow-cyan-500/20"
             >
-              Generate questions from this text
+              Generate quiz
             </button>
           </div>
         )}
-      </div>
 
-      {history.length > 0 && (
-        <div className="bg-slate-800/40 border border-slate-700/60 rounded-2xl p-4 space-y-2">
-          <p className="text-xs font-medium text-slate-400 flex items-center gap-1.5">
-            <History size={12} />
-            Past sessions
-          </p>
-          {history.slice(0, 5).map((r) => (
-            <button
-              key={r.id}
-              type="button"
-              onClick={() => onReview?.(r)}
-              className="w-full flex items-center justify-between gap-2 bg-slate-900/50 hover:bg-slate-800/70 border border-slate-700/50 rounded-xl px-3 py-2.5 text-left transition-colors group"
-            >
-              <span className="min-w-0">
-                <span className="block text-sm text-slate-200 truncate">{r.topic}</span>
-                <span className="block text-[11px] text-slate-500">
-                  {new Date(r.date).toLocaleDateString()} · {r.stats.correct}/{r.stats.answered} correct ·{" "}
-                  {r.points} pts
-                </span>
-              </span>
-              <ChevronRight
-                size={15}
-                className="shrink-0 text-slate-600 group-hover:text-cyan-400 transition-colors"
-              />
-            </button>
-          ))}
-        </div>
-      )}
+        {/* History */}
+        {history.length > 0 && (
+          <div className="space-y-3 screen-enter">
+            <div className="flex items-center justify-between gap-3">
+              <p className="text-xs font-semibold uppercase tracking-widest text-[#64748B]">
+                Recent quizzes
+              </p>
+              {history.length > 5 && (
+                <button
+                  type="button"
+                  onClick={() => setShowAll((v) => !v)}
+                  className="text-xs text-cyan-400 hover:text-cyan-300 transition-colors"
+                >
+                  {showAll ? "Show recent" : "View all"}
+                </button>
+              )}
+            </div>
+            <div className="space-y-2">
+              {visibleHistory.map((r) => {
+                const acc = accFor(r);
+                return (
+                  <div
+                    key={r.id}
+                    className="group flex items-center justify-between gap-3 bg-[#1E293B] rounded-xl px-4 py-3 border border-[#334155] hover:border-[#475569] transition-colors cursor-pointer"
+                    onClick={() => onReview?.(r)}
+                  >
+                    <div className="min-w-0">
+                      <p className="text-sm font-medium text-[#E2E8F0] group-hover:text-white transition-colors [overflow-wrap:anywhere] leading-snug">
+                        {r.topic}
+                      </p>
+                      <p className="text-xs text-[#64748B] mt-0.5">
+                        {r.results.length} questions · {r.points} pts ·{" "}
+                        {new Date(r.date).toLocaleDateString()}
+                      </p>
+                    </div>
+                    <div className="flex items-center gap-2 shrink-0">
+                      <span
+                        className={`px-3 py-1 rounded-full text-xs font-bold ${
+                          acc >= 85
+                            ? "bg-emerald-400/20 text-emerald-400"
+                            : acc >= 70
+                              ? "bg-amber-400/20 text-amber-400"
+                              : "bg-red-400/20 text-red-400"
+                        }`}
+                      >
+                        {acc}%
+                      </span>
+                      <button
+                        type="button"
+                        aria-label="Delete quiz"
+                        title="Delete quiz"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          if (window.confirm(`Delete "${r.topic}" from history?`)) {
+                            deleteHistory(r.id);
+                          }
+                        }}
+                        className="w-8 h-8 flex items-center justify-center rounded-lg text-[#475569] hover:text-red-400 hover:bg-red-400/10 transition-colors"
+                      >
+                        <Trash2 size={15} />
+                      </button>
+                      <ChevronRight
+                        size={16}
+                        className="text-[#475569] group-hover:text-[#64748B] transition-colors"
+                      />
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        )}
+      </main>
+
+      {/* Footer credit */}
+      <footer className="text-center mt-12 text-xs text-[#475569] flex items-center justify-center gap-1.5">
+        <Star size={10} className="text-violet-500" />
+        Built with Groq · GROQuiz
+      </footer>
     </div>
   );
 }

@@ -82,6 +82,7 @@ type QuizAction =
   | { type: "CONFIRM_ANSWER" }
   | { type: "NEXT_QUESTION" }
   | { type: "REPLACE_QUESTION"; index: number; question: FlashcardQuestion }
+  | { type: "RESTART_QUIZ" }
   | { type: "RESET_GAME" };
 
 const freshId = (prefix: string) =>
@@ -526,6 +527,28 @@ function reduce(state: QuizState, action: QuizAction): QuizState {
       };
     }
 
+    case "RESTART_QUIZ":
+      return {
+        ...state,
+        screen: "quiz",
+        currentIndex: 0,
+        isFlipped: false,
+        selected: null,
+        answered: false,
+        hintStage: 0,
+        timerPaused: false,
+        elapsed: 0,
+        elapsedByQuestion: {},
+        retryIds: [],
+        retryRound: false,
+        fiftyFiftyUsed: false,
+        results: [],
+        sessionId: freshId("sess"),
+        stats: defaultStats(state.mode),
+        questions: state.allQuestions,
+        allQuestions: state.allQuestions,
+      };
+
     case "RESET_GAME":
       return {
         ...initialState,
@@ -557,6 +580,7 @@ interface QuizContextValue {
   confirmAnswer: () => void;
   nextQuestion: () => void;
   resetGame: () => void;
+  restartQuiz: () => void;
   resumeGame: () => void;
   adaptUpcoming: () => Promise<void>;
   hintCache: Readonly<Record<string, string>>;
@@ -564,6 +588,7 @@ interface QuizContextValue {
   currentQuestion: FlashcardQuestion | null;
   hasSavedGame: boolean;
   history: HistoryRecord[];
+  deleteHistory: (id: string) => void;
   clearHistory: () => void;
 }
 
@@ -738,12 +763,28 @@ export function QuizProvider({ children }: { children: ReactNode }) {
           dispatch({ type: "SET_SCREEN", screen: save.screen });
         }
       },
+      restartQuiz: () => {
+        hintPendingRef.current.clear();
+        setHintCache({});
+        dispatch({ type: "RESTART_QUIZ" });
+      },
       adaptUpcoming,
       currentQuestion,
       hintCache,
       requestHint,
       hasSavedGame,
       history,
+      deleteHistory: (id) => {
+        setHistory((prev) => {
+          const next = prev.filter((r) => r.id !== id);
+          try {
+            localStorage.setItem(HISTORY_KEY, JSON.stringify(next));
+          } catch {
+            // ignore storage errors
+          }
+          return next;
+        });
+      },
       clearHistory: () => {
         localStorage.removeItem(HISTORY_KEY);
         setHistory([]);
