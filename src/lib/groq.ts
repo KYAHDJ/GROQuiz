@@ -100,7 +100,13 @@ export async function parsePdfBuffer(
         new Uint8Array(buffer),
         { mergePages: true }
       );
-      const cleaned = (text ?? "").replace(/\s+/g, " ").trim();
+      const cleaned = (text ?? "")
+        .replace(/\s+/g, " ")
+        .replace(/([A-Za-z])- ([A-Za-z])/g, "$1$2")
+        .replace(/([A-Za-z])-\s+([a-z])/g, (m: string, a: string, b: string) =>
+          /^[A-ZÀ-Ÿ]/.test(b) ? m : `${a}${b}`
+        )
+        .trim();
       if (!cleaned) {
         lastErr = new Error("empty-text");
         continue;

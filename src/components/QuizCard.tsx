@@ -47,7 +47,6 @@ export default function QuizCard() {
     nextQuestion,
     usePowerup,
     togglePause,
-    startTimer,
     currentQuestion,
   } = useQuiz();
 
@@ -81,12 +80,6 @@ export default function QuizCard() {
     },
     []
   );
-
-  useEffect(() => {
-    if (q && !answered && !timerPaused) {
-      startTimer();
-    }
-  }, [q?.id]);
 
   useEffect(() => {
     setClarification(null);
@@ -263,9 +256,8 @@ export default function QuizCard() {
               optStyle = "bg-slate-900/40 border-slate-800 text-slate-500";
               extraClasses = "opacity-50 scale-[0.92] py-1.5 text-xs";
             } else if (isBoosted) {
-              optStyle =
-                "bg-emerald-500/15 border-emerald-500/60 text-emerald-200 ring-2 ring-emerald-500/50";
-              extraClasses = "scale-[1.06] font-semibold py-4";
+              optStyle = "bg-slate-800 border-slate-500 text-slate-100";
+              extraClasses = "scale-[1.1] font-semibold py-4";
             } else if (isSelected) {
               optStyle = "bg-cyan-500/10 border-cyan-500/40 text-cyan-200";
             }
@@ -281,7 +273,7 @@ export default function QuizCard() {
                 <span
                   className={`absolute left-3 top-1/2 -translate-y-1/2 w-6 h-6 rounded-full ${
                     isBoosted && !answered
-                      ? "bg-emerald-600 text-white"
+                      ? "bg-slate-600 text-white"
                       : "bg-slate-700/60 text-slate-400"
                   } flex items-center justify-center text-[10px] font-bold`}
                 >

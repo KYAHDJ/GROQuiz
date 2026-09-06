@@ -118,6 +118,10 @@ ${avoid.map((a) => `  - ${a}`).join("\n") || "  (none yet)"}
 - Change the sentence structure, pick a different part of the material, and use different words.
 - Harder difficulty means harder READING, not trick questions — the answer is still directly in the source text.
 
+STRICT QUALITY RULE:
+- The source text may have OCR/PDF artifacts. Fix ALL of them. Broken or split words (e.g. "systema tic", "deter- mined"), typos, spacing errors, and grammar mistakes MUST be corrected.
+- The question, its options, and the explanation MUST be grammatically perfect, properly spaced, smoothly readable English. No garbled or machine-sounding text, ever. This rule is mandatory and cannot be skipped.
+
 CRITICAL: Respond with ONLY a valid JSON object: {"question": {...}}. No markdown, no prose. Shape:
 {
   "question": {

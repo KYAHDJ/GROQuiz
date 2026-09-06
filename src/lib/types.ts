@@ -73,6 +73,7 @@ export interface SavedGame {
   retryIds: string[];
   retryRound: boolean;
   timeLimit: number;
+  elapsedByQuestion?: Record<string, number>;
   currentIndex: number;
   stats: GameStats;
   inventory: PowerupInventory;

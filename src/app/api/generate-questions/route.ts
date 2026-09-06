@@ -161,6 +161,10 @@ UNIQUENESS RULES — very important:
 - Write each question in your own fresh words. Never copy phrasing from the examples or from other questions.
 - Harder difficulty means harder READING, not trick questions: all answers must still be directly findable in the source text.
 
+STRICT QUALITY RULE:
+- The source text may have OCR/PDF artifacts. Fix ALL of them. Broken or split words (e.g. "systema tic", "deter- mined", "mechanis m"), typos, spacing errors, and grammar mistakes MUST be corrected.
+- Every question, option, and explanation MUST be grammatically correct, properly spaced, and smoothly readable English. No machine-sounding or garbled text, ever. This rule is mandatory and cannot be skipped.
+
 CRITICAL: Respond with ONLY one valid JSON object containing a single key "questions". No markdown, no prose around it. Shape:
 {
   "questions": [

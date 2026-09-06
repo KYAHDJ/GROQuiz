@@ -52,6 +52,7 @@ interface QuizState {
   timerPaused: boolean;
   elapsed: number;
   timeLimit: number;
+  elapsedByQuestion: Record<string, number>;
   retryIds: string[];
   retryRound: boolean;
   fiftyFiftyUsed: boolean;
@@ -98,6 +99,7 @@ const initialState: QuizState = {
   timerPaused: false,
   elapsed: 0,
   timeLimit: 60,
+  elapsedByQuestion: {},
   retryIds: [],
   retryRound: false,
   fiftyFiftyUsed: false,
@@ -131,6 +133,7 @@ function loadSave(): QuizState {
       return initialState;
     }
     const mode: QuizMode = saved.mode === "hard" ? "hard" : "balanced";
+    const activeQuestionId = saved.questions[saved.currentIndex ?? 0]?.id;
     return {
       ...initialState,
       mode,
@@ -139,6 +142,11 @@ function loadSave(): QuizState {
       retryIds: saved.retryIds ?? [],
       retryRound: saved.retryRound ?? false,
       timeLimit: mode === "hard" ? 30 : Math.max(10, Math.min(180, saved.timeLimit ?? 60)),
+      elapsedByQuestion: saved.elapsedByQuestion ?? {},
+      elapsed:
+        activeQuestionId && saved.elapsedByQuestion?.[activeQuestionId] != null
+          ? saved.elapsedByQuestion[activeQuestionId]
+          : 0,
       currentIndex: saved.currentIndex ?? 0,
       stats: saved.stats ?? defaultStats(mode),
       inventory: saved.inventory ?? initialState.inventory,
@@ -168,12 +176,16 @@ function persistSave(state: QuizState): void {
     localStorage.removeItem(SAVE_KEY);
     return;
   }
+  const activeQuestion = state.questions[state.currentIndex];
   const saved: SavedGame = {
     questions: state.questions,
     allQuestions: state.allQuestions,
     retryIds: state.retryIds,
     retryRound: state.retryRound,
     timeLimit: state.timeLimit,
+    elapsedByQuestion: activeQuestion
+      ? { ...state.elapsedByQuestion, [activeQuestion.id]: state.elapsed }
+      : state.elapsedByQuestion,
     currentIndex: state.currentIndex,
     stats: state.stats,
     inventory: state.inventory,
@@ -247,6 +259,7 @@ function reduce(state: QuizState, action: QuizAction): QuizState {
         hintStage: 0,
         timerPaused: false,
         elapsed: 0,
+        elapsedByQuestion: {},
         retryIds: [],
         retryRound: false,
         fiftyFiftyUsed: false,
@@ -350,15 +363,28 @@ function reduce(state: QuizState, action: QuizAction): QuizState {
       const alreadyAnswered = state.results.some(
         (r) => r.questionId === state.questions[idx].id
       );
+      const elapsedByQuestion = { ...state.elapsedByQuestion };
+      const active = state.questions[state.currentIndex];
+      if (active) elapsedByQuestion[active.id] = state.elapsed;
+      const targetElapsed = state.elapsedByQuestion[state.questions[idx].id] ?? 0;
+      const targetHintStage =
+        targetElapsed >= state.timeLimit * 0.75
+          ? 3
+          : targetElapsed >= state.timeLimit * 0.5
+            ? 2
+            : targetElapsed >= state.timeLimit * 0.25
+              ? 1
+              : 0;
       return {
         ...state,
         currentIndex: idx,
         selected: null,
         answered: alreadyAnswered,
-        hintStage: alreadyAnswered ? 0 : state.hintStage,
+        hintStage: alreadyAnswered ? 0 : targetHintStage,
         isFlipped: false,
         timerPaused: false,
-        elapsed: 0,
+        elapsedByQuestion,
+        elapsed: targetElapsed,
         fiftyFiftyUsed: alreadyAnswered ? false : state.fiftyFiftyUsed,
       };
     }
@@ -436,6 +462,9 @@ function reduce(state: QuizState, action: QuizAction): QuizState {
     }
 
     case "NEXT_QUESTION": {
+      const elapsedByQuestion = { ...state.elapsedByQuestion };
+      const active = state.questions[state.currentIndex];
+      if (active) elapsedByQuestion[active.id] = state.elapsed;
       const nextIndex = state.currentIndex + 1;
       if (nextIndex < state.questions.length) {
         return {
@@ -446,6 +475,7 @@ function reduce(state: QuizState, action: QuizAction): QuizState {
           answered: false,
           hintStage: 0,
           timerPaused: false,
+          elapsedByQuestion,
           elapsed: 0,
           fiftyFiftyUsed: false,
         };
@@ -465,12 +495,13 @@ function reduce(state: QuizState, action: QuizAction): QuizState {
             answered: false,
             hintStage: 0,
             timerPaused: false,
+            elapsedByQuestion,
             elapsed: 0,
             fiftyFiftyUsed: false,
           };
         }
       }
-      return { ...state, screen: "results" };
+      return { ...state, elapsedByQuestion, screen: "results" };
     }
 
     case "REPLACE_QUESTION": {
