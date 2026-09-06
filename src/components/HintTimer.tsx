@@ -6,18 +6,19 @@ import { useQuiz } from "@/context/QuizContext";
 export default function HintTimer() {
   const { state, tick } = useQuiz();
   const { elapsed, answered, timerPaused, timeLimit, mode } = state;
-  const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  const tickRef = useRef(tick);
+  tickRef.current = tick;
+  const pausedRef = useRef(false);
+  pausedRef.current = answered || timerPaused;
 
   useEffect(() => {
-    if (answered || timerPaused) {
-      if (intervalRef.current) clearInterval(intervalRef.current);
-      return;
-    }
-    intervalRef.current = setInterval(tick, 1000);
-    return () => {
-      if (intervalRef.current) clearInterval(intervalRef.current);
-    };
-  }, [answered, timerPaused, tick]);
+    const interval = setInterval(() => {
+      if (pausedRef.current) return;
+      tickRef.current();
+    }, 1000);
+    return () => clearInterval(interval);
+  }, []);
 
   const remaining = Math.max(0, timeLimit - elapsed);
   const pct = Math.min((elapsed / timeLimit) * 100, 100);

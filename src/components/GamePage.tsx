@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { ShoppingBag, Play, ArrowLeft } from "lucide-react";
 import { useQuiz } from "@/context/QuizContext";
 import type { HistoryRecord } from "@/lib/types";
@@ -16,12 +16,19 @@ export default function GamePage() {
   const { state, togglePause, resetGame, adaptUpcoming } = useQuiz();
   const [shopOpen, setShopOpen] = useState(false);
   const [review, setReview] = useState<HistoryRecord | null>(null);
+  const adaptingRef = useRef<number | null>(null);
 
   useEffect(() => {
     if (state.screen === "quiz" && state.mode === "balanced" && !state.retryRound) {
-      adaptUpcoming();
+      const idx = state.currentIndex + 1;
+      if (idx < state.questions.length && adaptingRef.current !== idx) {
+        adaptingRef.current = idx;
+        adaptUpcoming().finally(() => {
+          if (adaptingRef.current === idx) adaptingRef.current = null;
+        });
+      }
     }
-  }, [state.currentIndex, state.screen, state.mode, state.retryRound, adaptUpcoming]);
+  }, [state.screen, state.mode, state.retryRound, state.currentIndex, state.questions.length, adaptUpcoming]);
 
   if (state.screen === "landing") {
     if (review) {
