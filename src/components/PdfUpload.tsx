@@ -31,6 +31,8 @@ import type {
 } from "@/lib/types";
 import ConfirmModal from "./ConfirmModal";
 import QuizNameModal from "./QuizNameModal";
+import AuthModal from "./AuthModal";
+import { onFirebaseUser, type FbUser } from "@/lib/firebase/client";
 
 const MAX_PDF_MB = 50;
 const TIME_OPTIONS = [15, 30, 45, 60, 90];
@@ -54,7 +56,7 @@ function BrandLogo({ size = 36 }: { size?: number }) {
   return (
     <div
       style={{ width: size, height: size }}
-      className="rounded-lg bg-gradient-to-br from-cyan-400 to-violet-500 flex items-center justify-center shrink-0"
+      className="rounded-lg bg-gradient-to-br from-fuchsia-400 to-violet-500 flex items-center justify-center shrink-0"
     >
       <svg width={size * 0.5} height={size * 0.5} fill="none" viewBox="0 0 16 16">
         <path d="M8 1L10.5 6H15L11 9.5L12.5 15L8 12L3.5 15L5 9.5L1 6H5.5L8 1Z" fill="white" />
@@ -106,7 +108,13 @@ export default function PdfUpload({
   const [deleteTarget, setDeleteTarget] = useState<HistoryRecord | null>(null);
   const [quizNameOpen, setQuizNameOpen] = useState(false);
   const [nameInitial, setNameInitial] = useState("");
-  const pendingStartRef = useRef<((name: string) => void) | null>(null);
+  const pendingStartRef = useRef<((name: string) => void | Promise<void>) | null>(null);
+  const [accountOpen, setAccountOpen] = useState(false);
+  const [fbUser, setFbUser] = useState<FbUser | null>(null);
+
+  useEffect(() => {
+    return onFirebaseUser((u) => setFbUser(u));
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
@@ -152,6 +160,61 @@ export default function PdfUpload({
     setQuizNameOpen(true);
   };
 
+  const splitBlocks = (text: string, size: number): string[] => {
+    const paras = text.split(/\n/);
+    const out: string[] = [];
+    let cur = "";
+    for (const p of paras) {
+      if ((cur + "\n" + p).length > size && cur) {
+        out.push(cur.trim());
+        cur = p;
+      } else {
+        cur = cur ? cur + "\n" + p : p;
+      }
+    }
+    if (cur.trim()) out.push(cur.trim());
+    return out.length > 0 ? out : [text];
+  };
+
+  const dedupeByQuestion = (qs: FlashcardQuestion[]): FlashcardQuestion[] => {
+    const seen = new Set<string>();
+    const out: FlashcardQuestion[] = [];
+    for (const q of qs) {
+      const key = q.question.trim().toLowerCase();
+      if (seen.has(key)) continue;
+      seen.add(key);
+      out.push(q);
+    }
+    return out;
+  };
+
+  const extractPdfText = async (items: QueueItem[]): Promise<string | null> => {
+    try {
+      setProgressLabel("Reading PDFs…");
+      setProgress(30);
+      const res = await fetch("/api/extract-text", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          pdfs: items.map((i) => ({ name: i.name, url: i.url })),
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok || typeof data?.text !== "string" || data.text.trim().length < 20) {
+        setError(
+          data?.error ??
+            "We couldn't read those PDFs. Try again or paste the text instead."
+        );
+        return null;
+      }
+      setProgress(45);
+      return data.text;
+    } catch {
+      setError("Something went wrong reading the PDFs. Please try again.");
+      return null;
+    }
+  };
+
   const startQuestionsFromText = async (text: string, quizName?: string) => {
     if (text.trim().length < 20) {
       setError("Please provide at least a couple sentences of material.");
@@ -161,38 +224,51 @@ export default function PdfUpload({
     const name = (quizName ?? topics).trim();
 
     try {
-      setProgressLabel("Generating questions…");
-      setProgress(50);
+      const blocks = splitBlocks(text, 7000);
+      const all: FlashcardQuestion[] = [];
+      let lastErr: string | null = null;
 
-      let genData: { questions?: FlashcardQuestion[]; error?: string } | null = null;
-      for (let attempt = 1; attempt <= 3; attempt++) {
-        if (attempt > 1) {
-          setProgressLabel(`Still generating questions… (attempt ${attempt}/3)`);
-          await new Promise((r) => setTimeout(r, 8000));
+      for (let i = 0; i < blocks.length; i++) {
+        const block = blocks[i];
+        if (!block) continue;
+        setProgressLabel(
+          `Generating questions… part ${i + 1} of ${blocks.length}`
+        );
+        setProgress(Math.round(15 + (i / blocks.length) * 75));
+        const want = Math.max(4, Math.min(6, Math.ceil(block.length / 1100)));
+
+        for (let attempt = 1; attempt <= 2; attempt++) {
+          if (attempt > 1) await new Promise((r) => setTimeout(r, 2500));
+          try {
+            const res = await fetch("/api/generate-questions", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                text: block,
+                topics: name,
+                count: want,
+                difficulty: mode === "hard" ? 4 : 3,
+                previous: all.slice(-14).map((q) => q.question),
+              }),
+            });
+            const data = await res.json();
+            if (res.ok && Array.isArray(data.questions) && data.questions.length > 0) {
+              all.push(...data.questions);
+              break;
+            }
+            lastErr = data?.error ?? "No questions came back.";
+          } catch {
+            lastErr = "Connection error while generating.";
+          }
         }
-        const genRes = await fetch("/api/generate-questions", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            text,
-            topics: name,
-            difficulty: mode === "hard" ? 4 : 3,
-          }),
-        });
-        genData = await genRes.json();
-        if (genRes.ok) break;
       }
 
-      if (!genData || !Array.isArray(genData.questions) || genData.questions.length === 0) {
+      const questions = dedupeByQuestion(all);
+      if (questions.length === 0) {
         setProgress(null);
-        setError(
-          genData?.error ??
-            "We couldn't generate questions for this material. Try again in a minute."
-        );
+        setError(lastErr ?? "We couldn't generate questions. Try again in a minute.");
         return;
       }
-
-      const questions: FlashcardQuestion[] = genData.questions;
 
       setProgress(100);
       setSource(text, name);
@@ -263,67 +339,28 @@ export default function PdfUpload({
     }
   };
 
-  const generateFromPdfs = async (items: QueueItem[], quizName: string) => {
-    setError(null);
-    const sid = sessionId;
-    try {
-      setProgressLabel("Reading PDFs…");
-      setProgress(60);
-
-      let genData: { questions?: FlashcardQuestion[]; error?: string } | null = null;
-      for (let attempt = 1; attempt <= 3; attempt++) {
-        if (attempt > 1) {
-          setProgressLabel(`Still generating questions… (attempt ${attempt}/3)`);
-          await new Promise((r) => setTimeout(r, 8000));
-        }
-        const genRes = await fetch("/api/generate-questions", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            pdfs: items.map((i) => ({ name: i.name, url: i.url })),
-            topics: quizName,
-            difficulty: mode === "hard" ? 4 : 3,
-          }),
-        });
-        genData = await genRes.json();
-        if (genRes.ok) break;
-      }
-
-      if (!genData || !Array.isArray(genData.questions) || genData.questions.length === 0) {
-        setError(
-          genData?.error ??
-            "We couldn't generate questions from these PDFs. Try again in a minute."
-        );
-        return;
-      }
-
-      const questions: FlashcardQuestion[] = genData.questions;
-      setProgress(100);
-      await new Promise((r) => setTimeout(r, 400));
-      loadQuestions(questions, { topics: quizName || "PDF quiz" });
-      setScreen("quiz");
-    } catch {
-      setError("Something went wrong while generating questions. Please try again.");
-    } finally {
-      if (sid) {
-        void deleteUploadSession(sid);
-      }
-      setSessionId(null);
-      setPdfQueue([]);
-      setProgress(null);
-    }
-  };
-
   const generateFromQueue = () => {
     if (active) return;
     const firebaseFiles = pdfQueue.filter((q) => q.status === "ready" && q.url);
     const textFiles = pdfQueue.filter((q) => q.status === "ready" && q.text);
-    let opener: (name: string) => void;
+    let opener: (name: string) => void | Promise<void>;
     if (firebaseFiles.length > 0) {
-      opener = (name) => void generateFromPdfs(firebaseFiles, name);
+      opener = async (name) => {
+        const sid = sessionId;
+        try {
+          const text = await extractPdfText(firebaseFiles);
+          if (!text) return;
+          await startQuestionsFromText(text, name);
+        } finally {
+          if (sid) void deleteUploadSession(sid);
+          setSessionId(null);
+          setPdfQueue([]);
+          setProgress(null);
+        }
+      };
     } else if (textFiles.length > 0) {
       const combined = textFiles.map((q) => q.text ?? "").join("\n\n");
-      opener = (name) => void startQuestionsFromText(combined, name);
+      opener = (name) => startQuestionsFromText(combined, name);
     } else {
       setError("Wait for the PDFs to finish uploading, or add a file first.");
       return;
@@ -385,35 +422,56 @@ export default function PdfUpload({
   };
 
   return (
-    <div className="min-h-full bg-[#0F172A] pb-16">
+    <div className="min-h-full bg-[#151021] pb-16">
       {/* Top nav bar */}
-      <header className="sticky top-0 z-30 bg-[#0F172A]/95 backdrop-blur-sm border-b border-[#334155] px-4 md:px-6 py-4 flex flex-wrap items-center justify-between gap-3">
+      <header className="sticky top-0 z-30 bg-[#151021]/95 backdrop-blur-sm border-b border-[#3A2E50] px-4 md:px-6 py-4 flex flex-wrap items-center justify-between gap-3">
         <div className="flex items-center gap-3">
           <BrandLogo />
-          <span className="text-xl font-bold text-[#E2E8F0] tracking-tight">GROQuiz</span>
+          <span className="text-xl font-bold text-[#F0EAF6] tracking-tight">GROQuiz</span>
         </div>
 
-        <div
-          className={`flex items-center gap-2 rounded-full border px-4 py-1.5 transition-colors ${
+        <div className="flex items-center gap-2">
+          <button
+            type="button"
+            onClick={() => setAccountOpen(true)}
+            title={fbUser && !fbUser.anonymous ? "Account — quizzes sync across devices" : "Sign in to sync across devices"}
+            className="flex items-center gap-2 rounded-full border border-[#3A2E50] bg-[#251C33] px-4 py-1.5 transition-colors hover:border-fuchsia-400/60"
+          >
+            <span
+              className={`w-2 h-2 rounded-full ${
+                fbUser && !fbUser.anonymous
+                  ? "bg-fuchsia-400 animate-pulse-dot"
+                  : "bg-[#8D7FA0]"
+              }`}
+            />
+            <span className="text-sm text-[#F0EAF6] whitespace-nowrap max-w-[11rem] truncate">
+              {fbUser && !fbUser.anonymous
+                ? fbUser.email ?? "Signed in"
+                : "Sign in"}
+            </span>
+          </button>
+
+          <div
+            className={`flex items-center gap-2 rounded-full border px-4 py-1.5 transition-colors ${
             groqCount === null
-              ? "bg-[#1E293B] border-[#334155]"
+              ? "bg-[#251C33] border-[#3A2E50]"
               : groqCount > 0
-                ? "bg-[#1E293B] border-[#334155]"
+                ? "bg-[#251C33] border-[#3A2E50]"
                 : "bg-red-500/10 border-red-400/30"
           }`}
         >
           <span
             className={`w-2 h-2 rounded-full ${
               groqCount === null
-                ? "bg-slate-500"
+                ? "bg-[#8D7FA0]"
                 : groqCount > 0
                   ? "bg-emerald-400 animate-pulse-dot"
                   : "bg-red-400"
             }`}
           />
-          <span className="text-sm text-[#E2E8F0] whitespace-nowrap">
+          <span className="text-sm text-[#F0EAF6] whitespace-nowrap">
             {groqCount === null ? (
-              <span className="text-[#94A3B8]">Checking AI keys…</span>
+              <span className="text-[#B8A9C8]">Checking AI keys…</span>
             ) : groqCount > 0 ? (
               <>
                 <span className="font-semibold text-emerald-400">
@@ -426,18 +484,19 @@ export default function PdfUpload({
             )}
           </span>
         </div>
+        </div>
       </header>
 
       <main className="max-w-[672px] mx-auto px-4 pt-8 sm:pt-10 space-y-6 sm:space-y-8 screen-enter">
         {/* Hero */}
         <div className="text-center space-y-2">
-          <h1 className="text-fluid-hero font-extrabold text-[#E2E8F0] tracking-tight [overflow-wrap:anywhere]">
+          <h1 className="text-fluid-hero font-extrabold text-[#F0EAF6] tracking-tight [overflow-wrap:anywhere]">
             Turn any PDF into a{" "}
-            <span className="text-transparent bg-clip-text bg-gradient-to-r from-cyan-400 to-violet-400">
+            <span className="text-transparent bg-clip-text bg-gradient-to-r from-fuchsia-400 to-violet-400">
               quiz in seconds
             </span>
           </h1>
-          <p className="text-fluid-base text-[#94A3B8]">
+          <p className="text-fluid-base text-[#B8A9C8]">
             Upload PDFs, paste text, or build your own — an adaptive quiz that
             adjusts to your answers.
           </p>
@@ -445,7 +504,7 @@ export default function PdfUpload({
 
         {/* Mode cards */}
         <div className="space-y-3">
-          <p className="text-xs font-semibold uppercase tracking-widest text-[#64748B]">
+          <p className="text-xs font-semibold uppercase tracking-widest text-[#8D7FA0]">
             Select mode
           </p>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
@@ -457,20 +516,20 @@ export default function PdfUpload({
               }}
               className={`relative p-5 rounded-2xl border-2 text-left transition-all duration-200 ${
                 mode === "balanced"
-                  ? "border-cyan-400 bg-cyan-400/10"
-                  : "border-[#334155] bg-[#1E293B] hover:border-[#475569]"
+                  ? "border-fuchsia-400 bg-fuchsia-400/10"
+                  : "border-[#3A2E50] bg-[#251C33] hover:border-[#6E5F81]"
               }`}
             >
               {mode === "balanced" && (
-                <span className="absolute top-3 right-3 w-5 h-5 rounded-full bg-cyan-400 flex items-center justify-center">
-                  <Check size={12} strokeWidth={3} className="text-[#0F172A]" />
+                <span className="absolute top-3 right-3 w-5 h-5 rounded-full bg-fuchsia-400 flex items-center justify-center">
+                  <Check size={12} strokeWidth={3} className="text-[#151021]" />
                 </span>
               )}
-              <div className="w-10 h-10 rounded-xl bg-cyan-400/20 flex items-center justify-center mb-3">
-                <Scale size={20} className="text-cyan-400" />
+              <div className="w-10 h-10 rounded-xl bg-fuchsia-400/20 flex items-center justify-center mb-3">
+                <Scale size={20} className="text-fuchsia-400" />
               </div>
-              <p className="font-bold text-[#E2E8F0] text-sm mb-1">Balanced</p>
-              <p className="text-[#64748B] text-xs leading-relaxed">
+              <p className="font-bold text-[#F0EAF6] text-sm mb-1">Balanced</p>
+              <p className="text-[#8D7FA0] text-xs leading-relaxed">
                 Starts Medium and adjusts to your answers
               </p>
             </button>
@@ -484,19 +543,19 @@ export default function PdfUpload({
               className={`relative p-5 rounded-2xl border-2 text-left transition-all duration-200 ${
                 mode === "hard"
                   ? "border-red-400 bg-red-400/10"
-                  : "border-[#334155] bg-[#1E293B] hover:border-[#475569]"
+                  : "border-[#3A2E50] bg-[#251C33] hover:border-[#6E5F81]"
               }`}
             >
               {mode === "hard" && (
                 <span className="absolute top-3 right-3 w-5 h-5 rounded-full bg-red-400 flex items-center justify-center">
-                  <Check size={12} strokeWidth={3} className="text-[#0F172A]" />
+                  <Check size={12} strokeWidth={3} className="text-[#151021]" />
                 </span>
               )}
               <div className="w-10 h-10 rounded-xl bg-red-400/20 flex items-center justify-center mb-3">
                 <Lock size={20} className="text-red-400" />
               </div>
-              <p className="font-bold text-[#E2E8F0] text-sm mb-1">Hard</p>
-              <p className="text-[#64748B] text-xs leading-relaxed">
+              <p className="font-bold text-[#F0EAF6] text-sm mb-1">Hard</p>
+              <p className="text-[#8D7FA0] text-xs leading-relaxed">
                 Locked at Hard — no power-ups, fixed 30s each
               </p>
             </button>
@@ -504,8 +563,8 @@ export default function PdfUpload({
         </div>
 
         {/* Time limit */}
-        <div className="space-y-3 bg-[#1E293B] rounded-2xl p-5 border border-[#334155]">
-          <p className="text-sm font-semibold text-[#E2E8F0]">
+        <div className="space-y-3 bg-[#251C33] rounded-2xl p-5 border border-[#3A2E50]">
+          <p className="text-sm font-semibold text-[#F0EAF6]">
             {mode === "hard" ? "Time per question" : "Pick your time limit per question"}
           </p>
           <div className="flex gap-2 flex-wrap">
@@ -519,8 +578,8 @@ export default function PdfUpload({
                   onClick={() => !isFixed && setTimeLimit(t)}
                   className={`px-4 py-1.5 rounded-full text-sm font-medium transition-all duration-150 ${
                     on
-                      ? "bg-cyan-400 text-[#0F172A] font-bold"
-                      : "bg-[#0F172A] border border-[#334155] text-[#94A3B8] hover:border-cyan-400/50 hover:text-[#E2E8F0]"
+                      ? "bg-fuchsia-400 text-[#151021] font-bold"
+                      : "bg-[#151021] border border-[#3A2E50] text-[#B8A9C8] hover:border-fuchsia-400/50 hover:text-[#F0EAF6]"
                   } ${isFixed && !on ? "opacity-40 cursor-not-allowed" : ""}`}
                   title={isFixed ? "Fixed at 30s in Hard mode" : `${t} seconds per question`}
                 >
@@ -529,21 +588,21 @@ export default function PdfUpload({
               );
             })}
           </div>
-          <p className="text-xs text-[#64748B]">
+          <p className="text-xs text-[#8D7FA0]">
             Time out = marked wrong, then a retry at the end.
           </p>
         </div>
 
         {hasSavedGame && state.screen === "landing" && (
-          <div className="bg-cyan-400/10 border border-cyan-400/30 rounded-2xl px-5 py-3 flex items-center justify-between gap-3">
-            <p className="text-sm text-cyan-300 [overflow-wrap:anywhere]">
+          <div className="bg-fuchsia-400/10 border border-fuchsia-400/30 rounded-2xl px-5 py-3 flex items-center justify-between gap-3">
+            <p className="text-sm text-fuchsia-300 [overflow-wrap:anywhere]">
               You have an unfinished quiz on{" "}
               <span className="font-semibold">{state.currentTopics || "your material"}</span>.
             </p>
             <button
               type="button"
               onClick={resumeGame}
-              className="shrink-0 bg-gradient-to-r from-cyan-500 to-cyan-400 text-[#0F172A] font-bold text-sm rounded-xl px-4 py-2 transition-all hover:from-cyan-400 hover:to-cyan-300"
+              className="shrink-0 bg-gradient-to-r from-fuchsia-500 to-fuchsia-400 text-[#151021] font-bold text-sm rounded-xl px-4 py-2 transition-all hover:from-fuchsia-400 hover:to-fuchsia-300"
             >
               Resume
             </button>
@@ -564,14 +623,14 @@ export default function PdfUpload({
         )}
 
         {/* Input toggle */}
-        <div className="flex gap-1 bg-[#1E293B] rounded-xl p-1 border border-[#334155]">
+        <div className="flex gap-1 bg-[#251C33] rounded-xl p-1 border border-[#3A2E50]">
           <button
             type="button"
             onClick={() => setInputMode("upload")}
             className={`flex-1 py-2 rounded-lg text-sm font-medium transition-all duration-150 ${
               inputMode === "upload"
-                ? "bg-[#334155] text-[#E2E8F0]"
-                : "text-[#64748B] hover:text-[#94A3B8]"
+                ? "bg-[#3A2E50] text-[#F0EAF6]"
+                : "text-[#8D7FA0] hover:text-[#B8A9C8]"
             }`}
           >
             Upload PDF
@@ -581,8 +640,8 @@ export default function PdfUpload({
             onClick={() => setInputMode("paste")}
             className={`flex-1 py-2 rounded-lg text-sm font-medium transition-all duration-150 ${
               inputMode === "paste"
-                ? "bg-[#334155] text-[#E2E8F0]"
-                : "text-[#64748B] hover:text-[#94A3B8]"
+                ? "bg-[#3A2E50] text-[#F0EAF6]"
+                : "text-[#8D7FA0] hover:text-[#B8A9C8]"
             }`}
           >
             Paste Text
@@ -592,8 +651,8 @@ export default function PdfUpload({
             onClick={() => setInputMode("build")}
             className={`flex-1 py-2 rounded-lg text-sm font-medium transition-all duration-150 ${
               inputMode === "build"
-                ? "bg-[#334155] text-[#E2E8F0]"
-                : "text-[#64748B] hover:text-[#94A3B8]"
+                ? "bg-[#3A2E50] text-[#F0EAF6]"
+                : "text-[#8D7FA0] hover:text-[#B8A9C8]"
             }`}
           >
             Build Quiz
@@ -617,8 +676,8 @@ export default function PdfUpload({
               onClick={() => !active && fileRef.current?.click()}
               className={`rounded-2xl border-2 border-dashed p-8 sm:p-10 md:p-12 flex flex-col items-center gap-4 transition-all duration-200 cursor-pointer ${
                 isDragging || active
-                  ? "border-cyan-400 bg-cyan-400/10"
-                  : "border-[#334155] bg-[#1E293B] hover:border-[#475569]"
+                  ? "border-fuchsia-400 bg-fuchsia-400/10"
+                  : "border-[#3A2E50] bg-[#251C33] hover:border-[#6E5F81]"
               }`}
             >
               <input
@@ -636,33 +695,33 @@ export default function PdfUpload({
 
               {progress !== null ? (
                 <>
-                  <Loader2 size={32} className="text-cyan-400 animate-spin" />
+                  <Loader2 size={32} className="text-fuchsia-400 animate-spin" />
                   {pdfQueue.length > 0 && (
-                    <p className="text-sm text-[#E2E8F0] font-medium flex items-center gap-2">
-                      <FileText size={14} className="shrink-0 text-cyan-400" />
+                    <p className="text-sm text-[#F0EAF6] font-medium flex items-center gap-2">
+                      <FileText size={14} className="shrink-0 text-fuchsia-400" />
                       <span>
                         {pdfQueue.length} PDF{pdfQueue.length > 1 ? "s" : ""}
                       </span>
                     </p>
                   )}
-                  <p className="text-xs text-cyan-400">{progressLabel}</p>
-                  <div className="w-full max-w-xs h-1.5 bg-[#0F172A] rounded-full overflow-hidden">
+                  <p className="text-xs text-fuchsia-400">{progressLabel}</p>
+                  <div className="w-full max-w-xs h-1.5 bg-[#151021] rounded-full overflow-hidden">
                     <div
-                      className="h-full bg-gradient-to-r from-cyan-500 to-violet-500 rounded-full transition-all duration-300"
+                      className="h-full bg-gradient-to-r from-fuchsia-500 to-violet-500 rounded-full transition-all duration-300"
                       style={{ width: `${progress}%` }}
                     />
                   </div>
                 </>
               ) : (
                 <>
-                  <div className={`w-16 h-16 rounded-2xl flex items-center justify-center transition-colors ${isDragging ? "bg-cyan-400/20" : "bg-[#0F172A]"}`}>
-                    <Upload size={32} className={isDragging ? "text-cyan-400" : "text-[#475569]"} />
+                  <div className={`w-16 h-16 rounded-2xl flex items-center justify-center transition-colors ${isDragging ? "bg-fuchsia-400/20" : "bg-[#151021]"}`}>
+                    <Upload size={32} className={isDragging ? "text-fuchsia-400" : "text-[#6E5F81]"} />
                   </div>
                   <div className="text-center">
-                    <p className="text-[#94A3B8] font-medium [overflow-wrap:anywhere]">
+                    <p className="text-[#B8A9C8] font-medium [overflow-wrap:anywhere]">
                       Drag & drop PDFs here
                     </p>
-                    <p className="text-sm text-[#64748B] mt-1">
+                    <p className="text-sm text-[#8D7FA0] mt-1">
                       or{" "}
                       <button
                         type="button"
@@ -670,18 +729,18 @@ export default function PdfUpload({
                           e.stopPropagation();
                           setInputMode("paste");
                         }}
-                        className="text-cyan-400 hover:underline"
+                        className="text-fuchsia-400 hover:underline"
                       >
                         paste text instead
                       </button>
                     </p>
-                    <p className="text-xs text-[#64748B] mt-3">
+                    <p className="text-xs text-[#8D7FA0] mt-3">
                       Add several PDFs for one combined quiz. Your files are
                       uploaded to a private temp folder and auto-deleted after
                       the quiz is generated — never stored. Max {MAX_PDF_MB} MB each.
                     </p>
                   </div>
-                  <span className="mt-1 px-6 py-2.5 rounded-xl bg-[#0F172A] border border-[#334155] text-sm text-[#94A3B8] hover:border-cyan-400/60 hover:text-[#E2E8F0] transition-all cursor-pointer">
+                  <span className="mt-1 px-6 py-2.5 rounded-xl bg-[#151021] border border-[#3A2E50] text-sm text-[#B8A9C8] hover:border-fuchsia-400/60 hover:text-[#F0EAF6] transition-all cursor-pointer">
                     Browse files
                   </span>
                 </>
@@ -689,31 +748,31 @@ export default function PdfUpload({
             </div>
 
             {pdfQueue.length > 0 && progress === null && (
-              <div className="bg-[#1E293B] rounded-2xl border border-[#334155] p-4 space-y-3 screen-enter">
+              <div className="bg-[#251C33] rounded-2xl border border-[#3A2E50] p-4 space-y-3 screen-enter">
                 <div className="space-y-2">
                   {pdfQueue.map((item) => (
                     <div
                       key={item.id}
-                      className="flex items-center gap-3 bg-[#0F172A] rounded-xl border border-[#334155] px-3 py-2.5"
+                      className="flex items-center gap-3 bg-[#151021] rounded-xl border border-[#3A2E50] px-3 py-2.5"
                     >
                       <FileText
                         size={15}
                         className={`shrink-0 ${
                           item.status === "ready"
-                            ? "text-cyan-400"
+                            ? "text-fuchsia-400"
                             : item.status === "error"
                               ? "text-red-400"
-                              : "text-[#64748B]"
+                              : "text-[#8D7FA0]"
                         }`}
                       />
-                      <span className="flex-1 min-w-0 text-sm text-[#E2E8F0] truncate">
+                      <span className="flex-1 min-w-0 text-sm text-[#F0EAF6] truncate">
                         {item.name}
                       </span>
                       {item.status === "uploading" && (
-                        <Loader2 size={14} className="text-[#64748B] animate-spin shrink-0" />
+                        <Loader2 size={14} className="text-[#8D7FA0] animate-spin shrink-0" />
                       )}
                       {item.status === "ready" && (
-                        <span className="text-[#64748B] text-xs shrink-0">
+                        <span className="text-[#8D7FA0] text-xs shrink-0">
                           {item.url ? "ready" : "read"}
                         </span>
                       )}
@@ -724,7 +783,7 @@ export default function PdfUpload({
                         type="button"
                         aria-label={`Remove ${item.name}`}
                         onClick={() => removeFromQueue(item.id)}
-                        className="shrink-0 w-7 h-7 flex items-center justify-center rounded-lg text-[#64748B] hover:text-red-400 hover:bg-red-400/10 transition-colors"
+                        className="shrink-0 w-7 h-7 flex items-center justify-center rounded-lg text-[#8D7FA0] hover:text-red-400 hover:bg-red-400/10 transition-colors"
                       >
                         <X size={14} />
                       </button>
@@ -736,7 +795,7 @@ export default function PdfUpload({
                   type="button"
                   onClick={() => void generateFromQueue()}
                   disabled={readyCount === 0}
-                  className="w-full py-3 rounded-xl font-semibold text-sm transition-all duration-200 disabled:opacity-40 disabled:cursor-not-allowed bg-gradient-to-r from-cyan-500 to-cyan-400 text-[#0F172A] hover:from-cyan-400 hover:to-cyan-300 shadow-lg shadow-cyan-500/20"
+                  className="w-full py-3 rounded-xl font-semibold text-sm transition-all duration-200 disabled:opacity-40 disabled:cursor-not-allowed bg-gradient-to-r from-fuchsia-500 to-fuchsia-400 text-[#151021] hover:from-fuchsia-400 hover:to-fuchsia-300 shadow-lg shadow-fuchsia-500/20"
                 >
                   {readyCount > 0
                     ? `Generate quiz from ${readyCount} PDF${readyCount > 1 ? "s" : ""}`
@@ -746,9 +805,9 @@ export default function PdfUpload({
             )}
           </div>
         ) : inputMode === "paste" ? (
-          <div className="bg-[#1E293B] rounded-2xl border border-[#334155] p-5 space-y-4 screen-enter">
+          <div className="bg-[#251C33] rounded-2xl border border-[#3A2E50] p-5 space-y-4 screen-enter">
             <div className="space-y-2">
-              <label className="text-xs font-semibold text-[#94A3B8] uppercase tracking-wider">
+              <label className="text-xs font-semibold text-[#B8A9C8] uppercase tracking-wider">
                 Your text
               </label>
               <textarea
@@ -756,10 +815,10 @@ export default function PdfUpload({
                 onChange={(e) => setPastedText(e.target.value)}
                 placeholder="Paste your notes, article, or study material here…"
                 rows={7}
-                className="w-full bg-[#0F172A] border border-[#334155] rounded-xl px-4 py-3 text-sm text-[#E2E8F0] placeholder-[#475569] focus:outline-none focus:border-cyan-400/60 transition-colors [overflow-wrap:anywhere]"
+                className="w-full bg-[#151021] border border-[#3A2E50] rounded-xl px-4 py-3 text-sm text-[#F0EAF6] placeholder-[#6E5F81] focus:outline-none focus:border-fuchsia-400/60 transition-colors [overflow-wrap:anywhere]"
               />
               <div className="flex items-center justify-between gap-3 flex-wrap">
-                <p className="text-xs text-[#64748B]">{pastedText.length} characters</p>
+                <p className="text-xs text-[#8D7FA0]">{pastedText.length} characters</p>
                 <button
                   type="button"
                   onClick={() =>
@@ -768,7 +827,7 @@ export default function PdfUpload({
                       .then((t) => t && setPastedText(t))
                       .catch(() => {})
                   }
-                  className="flex items-center gap-2 text-xs text-cyan-400 hover:text-cyan-300 transition-colors"
+                  className="flex items-center gap-2 text-xs text-fuchsia-400 hover:text-fuchsia-300 transition-colors"
                 >
                   <ClipboardPaste size={14} />
                   Paste from clipboard
@@ -777,14 +836,14 @@ export default function PdfUpload({
             </div>
 
             <div className="space-y-2">
-              <label className="text-xs font-semibold text-[#94A3B8] uppercase tracking-wider">
+              <label className="text-xs font-semibold text-[#B8A9C8] uppercase tracking-wider">
                 Topic (optional)
               </label>
               <input
                 value={topics}
                 onChange={(e) => setTopics(e.target.value)}
                 placeholder="e.g. Cellular Respiration"
-                className="w-full bg-[#0F172A] border border-[#334155] rounded-xl px-4 py-3 text-sm text-[#E2E8F0] placeholder-[#475569] focus:outline-none focus:border-cyan-400/60 transition-colors"
+                className="w-full bg-[#151021] border border-[#3A2E50] rounded-xl px-4 py-3 text-sm text-[#F0EAF6] placeholder-[#6E5F81] focus:outline-none focus:border-fuchsia-400/60 transition-colors"
               />
             </div>
 
@@ -792,22 +851,22 @@ export default function PdfUpload({
               type="button"
               onClick={handleGenerate}
               disabled={active || pastedText.trim().length < 20}
-              className="w-full py-3 rounded-xl font-semibold text-sm transition-all duration-200 disabled:opacity-40 disabled:cursor-not-allowed bg-gradient-to-r from-cyan-500 to-cyan-400 text-[#0F172A] hover:from-cyan-400 hover:to-cyan-300 shadow-lg shadow-cyan-500/20"
+              className="w-full py-3 rounded-xl font-semibold text-sm transition-all duration-200 disabled:opacity-40 disabled:cursor-not-allowed bg-gradient-to-r from-fuchsia-500 to-fuchsia-400 text-[#151021] hover:from-fuchsia-400 hover:to-fuchsia-300 shadow-lg shadow-fuchsia-500/20"
             >
               Generate quiz
             </button>
           </div>
         ) : (
-          <div className="bg-[#1E293B] rounded-2xl border border-[#334155] p-5 space-y-4 screen-enter">
+          <div className="bg-[#251C33] rounded-2xl border border-[#3A2E50] p-5 space-y-4 screen-enter">
             <div className="flex items-center justify-between gap-2 flex-wrap">
-              <p className="text-sm font-semibold text-[#E2E8F0]">Build your own quiz</p>
-              <p className="text-xs text-[#64748B]">
+              <p className="text-sm font-semibold text-[#F0EAF6]">Build your own quiz</p>
+              <p className="text-xs text-[#8D7FA0]">
                 {builderItems.length} question{builderItems.length === 1 ? "" : "s"} added
               </p>
             </div>
 
             <div className="space-y-2">
-              <label className="text-xs font-semibold text-[#94A3B8] uppercase tracking-wider">
+              <label className="text-xs font-semibold text-[#B8A9C8] uppercase tracking-wider">
                 Question
               </label>
               <textarea
@@ -815,12 +874,12 @@ export default function PdfUpload({
                 onChange={(e) => setDraft({ ...draft, question: e.target.value })}
                 placeholder="Type your question here…"
                 rows={2}
-                className="w-full bg-[#0F172A] border border-[#334155] rounded-xl px-4 py-3 text-sm text-[#E2E8F0] placeholder-[#475569] focus:outline-none focus:border-cyan-400/60 transition-colors [overflow-wrap:anywhere]"
+                className="w-full bg-[#151021] border border-[#3A2E50] rounded-xl px-4 py-3 text-sm text-[#F0EAF6] placeholder-[#6E5F81] focus:outline-none focus:border-fuchsia-400/60 transition-colors [overflow-wrap:anywhere]"
               />
             </div>
 
             <div className="space-y-2">
-              <label className="text-xs font-semibold text-[#94A3B8] uppercase tracking-wider">
+              <label className="text-xs font-semibold text-[#B8A9C8] uppercase tracking-wider">
                 Answers — tap the circle to mark the correct one
               </label>
               {draft.options.map((opt, i) => {
@@ -831,8 +890,8 @@ export default function PdfUpload({
                     key={i}
                     className={`flex items-center gap-2 rounded-xl border px-3 py-2.5 transition-colors ${
                       isCorrect
-                        ? "border-cyan-400 bg-cyan-400/10"
-                        : "border-[#334155] bg-[#0F172A]"
+                        ? "border-fuchsia-400 bg-fuchsia-400/10"
+                        : "border-[#3A2E50] bg-[#151021]"
                     }`}
                   >
                     <button
@@ -841,13 +900,13 @@ export default function PdfUpload({
                       aria-label={`Mark option ${letter} as correct`}
                       className={`w-6 h-6 shrink-0 rounded-full border-2 flex items-center justify-center transition-colors ${
                         isCorrect
-                          ? "border-cyan-400 bg-cyan-400 text-[#0F172A]"
-                          : "border-[#334155] text-transparent hover:border-cyan-400/60"
+                          ? "border-fuchsia-400 bg-fuchsia-400 text-[#151021]"
+                          : "border-[#3A2E50] text-transparent hover:border-fuchsia-400/60"
                       }`}
                     >
                       <Check size={12} strokeWidth={3} />
                     </button>
-                    <span className="text-xs font-bold text-[#64748B] w-5 shrink-0">
+                    <span className="text-xs font-bold text-[#8D7FA0] w-5 shrink-0">
                       {letter}
                     </span>
                     <input
@@ -858,7 +917,7 @@ export default function PdfUpload({
                         setDraft({ ...draft, options });
                       }}
                       placeholder={`Option ${letter}`}
-                      className="flex-1 min-w-0 bg-transparent text-sm text-[#E2E8F0] placeholder-[#475569] focus:outline-none"
+                      className="flex-1 min-w-0 bg-transparent text-sm text-[#F0EAF6] placeholder-[#6E5F81] focus:outline-none"
                     />
                   </div>
                 );
@@ -872,7 +931,7 @@ export default function PdfUpload({
             <button
               type="button"
               onClick={addBuilderQuestion}
-              className="w-full flex items-center justify-center gap-2 py-2.5 rounded-xl border border-cyan-400/40 bg-cyan-400/10 text-cyan-400 text-sm font-semibold hover:bg-cyan-400/20 transition-all"
+              className="w-full flex items-center justify-center gap-2 py-2.5 rounded-xl border border-fuchsia-400/40 bg-fuchsia-400/10 text-fuchsia-400 text-sm font-semibold hover:bg-fuchsia-400/20 transition-all"
             >
               <Plus size={15} />
               Add question
@@ -883,19 +942,19 @@ export default function PdfUpload({
                 {builderItems.map((b, i) => (
                   <div
                     key={b.id}
-                    className="flex items-start gap-3 bg-[#0F172A] rounded-xl border border-[#334155] px-3 py-2.5"
+                    className="flex items-start gap-3 bg-[#151021] rounded-xl border border-[#3A2E50] px-3 py-2.5"
                   >
-                    <span className="text-xs font-bold text-cyan-400 w-5 shrink-0 mt-0.5">
+                    <span className="text-xs font-bold text-fuchsia-400 w-5 shrink-0 mt-0.5">
                       {i + 1}
                     </span>
-                    <p className="flex-1 min-w-0 text-sm text-[#94A3B8] leading-snug [overflow-wrap:anywhere]">
+                    <p className="flex-1 min-w-0 text-sm text-[#B8A9C8] leading-snug [overflow-wrap:anywhere]">
                       {b.question}
                     </p>
                     <button
                       type="button"
                       onClick={() => removeBuilderQuestion(b.id)}
                       aria-label={`Remove question ${i + 1}`}
-                      className="shrink-0 w-7 h-7 flex items-center justify-center rounded-lg text-[#64748B] hover:text-red-400 hover:bg-red-400/10 transition-colors"
+                      className="shrink-0 w-7 h-7 flex items-center justify-center rounded-lg text-[#8D7FA0] hover:text-red-400 hover:bg-red-400/10 transition-colors"
                     >
                       <X size={14} />
                     </button>
@@ -905,14 +964,14 @@ export default function PdfUpload({
             )}
 
             <div className="space-y-2">
-              <label className="text-xs font-semibold text-[#94A3B8] uppercase tracking-wider">
+              <label className="text-xs font-semibold text-[#B8A9C8] uppercase tracking-wider">
                 Quiz title (optional)
               </label>
               <input
                 value={topics}
                 onChange={(e) => setTopics(e.target.value)}
                 placeholder="e.g. My French vocab quiz"
-                className="w-full bg-[#0F172A] border border-[#334155] rounded-xl px-4 py-3 text-sm text-[#E2E8F0] placeholder-[#475569] focus:outline-none focus:border-cyan-400/60 transition-colors"
+                className="w-full bg-[#151021] border border-[#3A2E50] rounded-xl px-4 py-3 text-sm text-[#F0EAF6] placeholder-[#6E5F81] focus:outline-none focus:border-fuchsia-400/60 transition-colors"
               />
             </div>
 
@@ -920,7 +979,7 @@ export default function PdfUpload({
               type="button"
               onClick={startBuilderQuiz}
               disabled={builderItems.length < 3 || active}
-              className="w-full py-3 rounded-xl font-semibold text-sm transition-all duration-200 disabled:opacity-40 disabled:cursor-not-allowed bg-gradient-to-r from-cyan-500 to-cyan-400 text-[#0F172A] hover:from-cyan-400 hover:to-cyan-300 shadow-lg shadow-cyan-500/20"
+              className="w-full py-3 rounded-xl font-semibold text-sm transition-all duration-200 disabled:opacity-40 disabled:cursor-not-allowed bg-gradient-to-r from-fuchsia-500 to-fuchsia-400 text-[#151021] hover:from-fuchsia-400 hover:to-fuchsia-300 shadow-lg shadow-fuchsia-500/20"
             >
               Start quiz
             </button>
@@ -931,14 +990,14 @@ export default function PdfUpload({
         {history.length > 0 && (
           <div className="space-y-3 screen-enter">
             <div className="flex items-center justify-between gap-3">
-              <p className="text-xs font-semibold uppercase tracking-widest text-[#64748B]">
+              <p className="text-xs font-semibold uppercase tracking-widest text-[#8D7FA0]">
                 Recent quizzes
               </p>
               {history.length > 5 && (
                 <button
                   type="button"
                   onClick={() => setShowAll((v) => !v)}
-                  className="text-xs text-cyan-400 hover:text-cyan-300 transition-colors"
+                  className="text-xs text-fuchsia-400 hover:text-fuchsia-300 transition-colors"
                 >
                   {showAll ? "Show recent" : "View all"}
                 </button>
@@ -950,14 +1009,14 @@ export default function PdfUpload({
                 return (
                   <div
                     key={r.id}
-                    className="group flex items-center justify-between gap-2 bg-[#1E293B] rounded-xl pl-4 pr-2 py-3 border border-[#334155] hover:border-[#475569] transition-colors cursor-pointer"
+                    className="group flex items-center justify-between gap-2 bg-[#251C33] rounded-xl pl-4 pr-2 py-3 border border-[#3A2E50] hover:border-[#6E5F81] transition-colors cursor-pointer"
                     onClick={() => onReview?.(r)}
                   >
                     <div className="min-w-0">
-                      <p className="text-sm font-medium text-[#E2E8F0] group-hover:text-white transition-colors [overflow-wrap:anywhere] leading-snug">
+                      <p className="text-sm font-medium text-[#F0EAF6] group-hover:text-white transition-colors [overflow-wrap:anywhere] leading-snug">
                         {r.topic}
                       </p>
-                      <p className="text-xs text-[#64748B] mt-0.5">
+                      <p className="text-xs text-[#8D7FA0] mt-0.5">
                         {r.results.length} questions · {r.points} pts ·{" "}
                         {new Date(r.date).toLocaleDateString()}
                       </p>
@@ -987,7 +1046,7 @@ export default function PdfUpload({
                             })
                           );
                         }}
-                        className="w-8 h-8 flex items-center justify-center rounded-lg text-[#64748B] hover:text-cyan-400 hover:bg-cyan-400/10 transition-colors"
+                        className="w-8 h-8 flex items-center justify-center rounded-lg text-[#8D7FA0] hover:text-fuchsia-400 hover:bg-fuchsia-400/10 transition-colors"
                       >
                         <RotateCcw size={15} />
                       </button>
@@ -999,13 +1058,13 @@ export default function PdfUpload({
                           e.stopPropagation();
                           setDeleteTarget(r);
                         }}
-                        className="w-8 h-8 flex items-center justify-center rounded-lg text-[#475569] hover:text-red-400 hover:bg-red-400/10 transition-colors"
+                        className="w-8 h-8 flex items-center justify-center rounded-lg text-[#6E5F81] hover:text-red-400 hover:bg-red-400/10 transition-colors"
                       >
                         <Trash2 size={15} />
                       </button>
                       <ChevronRight
                         size={16}
-                        className="text-[#475569] group-hover:text-[#64748B] transition-colors"
+                        className="text-[#6E5F81] group-hover:text-[#8D7FA0] transition-colors"
                       />
                     </div>
                   </div>
@@ -1017,7 +1076,7 @@ export default function PdfUpload({
       </main>
 
       {/* Footer credit */}
-      <footer className="text-center mt-12 text-xs text-[#475569] flex items-center justify-center gap-1.5">
+      <footer className="text-center mt-12 text-xs text-[#6E5F81] flex items-center justify-center gap-1.5">
         <Star size={10} className="text-violet-500" />
         GROQuiz
       </footer>
@@ -1052,6 +1111,8 @@ export default function PdfUpload({
         }}
         onCancel={() => setDeleteTarget(null)}
       />
+
+      <AuthModal open={accountOpen} onClose={() => setAccountOpen(false)} />
     </div>
   );
 }

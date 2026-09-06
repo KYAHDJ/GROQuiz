@@ -5,7 +5,7 @@
 @tailwind utilities;
 
 :root {
-  --color-accent: 34 211 238;
+  --color-accent: 232 121 249;
 }
 
 html {
@@ -13,8 +13,8 @@ html {
 }
 
 body {
-  background: #0f172a;
-  color: #e2e8f0;
+  background: #151021;
+  color: #f0eaf6;
   font-family: "Inter", system-ui, -apple-system, "Segoe UI", sans-serif;
   background-attachment: fixed;
 }
@@ -128,7 +128,7 @@ body {
 }
 
 ::selection {
-  background-color: rgba(34, 211, 238, 0.35);
+  background-color: rgba(232, 121, 249, 0.35);
 }
 
 ::-webkit-scrollbar {
@@ -136,14 +136,14 @@ body {
   height: 8px;
 }
 ::-webkit-scrollbar-track {
-  background: #0f172a;
+  background: #151021;
 }
 ::-webkit-scrollbar-thumb {
-  background: #334155;
+  background: #3A2E50;
   border-radius: 8px;
 }
 ::-webkit-scrollbar-thumb:hover {
-  background: #475569;
+  background: #6E5F81;
 }
 
 @layer components {

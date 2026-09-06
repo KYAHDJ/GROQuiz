@@ -27,7 +27,7 @@ function BrandLogo({ size = 32 }: { size?: number }) {
   return (
     <div
       style={{ width: size, height: size }}
-      className="rounded-lg bg-gradient-to-br from-cyan-400 to-violet-500 flex items-center justify-center shrink-0"
+      className="rounded-lg bg-gradient-to-br from-fuchsia-400 to-violet-500 flex items-center justify-center shrink-0"
     >
       <svg width={size * 0.5} height={size * 0.5} fill="none" viewBox="0 0 16 16">
         <path d="M8 1L10.5 6H15L11 9.5L12.5 15L8 12L3.5 15L5 9.5L1 6H5.5L8 1Z" fill="white" />
@@ -77,7 +77,7 @@ function ScoreRing({ pct, pts }: { pct: number; pts: number }) {
           cy="104"
           r={radius}
           fill="none"
-          stroke="#1E293B"
+          stroke="#251C33"
           strokeWidth="14"
         />
         <circle
@@ -94,10 +94,10 @@ function ScoreRing({ pct, pts }: { pct: number; pts: number }) {
         />
       </svg>
       <div className="absolute text-center">
-        <p className="text-5xl font-extrabold text-[#E2E8F0] tabular-nums leading-none">
+        <p className="text-5xl font-extrabold text-[#F0EAF6] tabular-nums leading-none">
           {displayed}%
         </p>
-        <p className="text-xs text-[#64748B] mt-1 font-medium">{pts} pts</p>
+        <p className="text-xs text-[#8D7FA0] mt-1 font-medium">{pts} pts</p>
       </div>
     </div>
   );
@@ -164,22 +164,22 @@ export default function ScoreDisplay({
           : "Keep practicing";
 
   return (
-    <div className="min-h-dvh bg-[#0F172A] flex flex-col">
+    <div className="min-h-dvh bg-[#151021] flex flex-col">
       {/* Header */}
-      <header className="border-b border-[#334155] px-4 md:px-6 py-4 flex items-center justify-between gap-4">
+      <header className="border-b border-[#3A2E50] px-4 md:px-6 py-4 flex items-center justify-between gap-4">
         <div className="flex items-center gap-3">
           {isReview ? (
             <button
               onClick={onBack}
               aria-label="Back to home"
-              className="w-9 h-9 rounded-xl border border-[#334155] flex items-center justify-center text-[#64748B] hover:text-[#E2E8F0] hover:border-[#475569] transition-all shrink-0"
+              className="w-9 h-9 rounded-xl border border-[#3A2E50] flex items-center justify-center text-[#8D7FA0] hover:text-[#F0EAF6] hover:border-[#6E5F81] transition-all shrink-0"
             >
               <ArrowLeft size={16} />
             </button>
           ) : (
             <BrandLogo />
           )}
-          <span className="text-xl font-bold text-[#E2E8F0] tracking-tight">
+          <span className="text-xl font-bold text-[#F0EAF6] tracking-tight">
             {isReview ? "Review" : "GROQuiz"}
           </span>
         </div>
@@ -189,7 +189,7 @@ export default function ScoreDisplay({
               ? "border-violet-400/30 bg-violet-400/10 text-violet-400"
               : state.mode === "hard"
                 ? "border-red-400/30 bg-red-400/10 text-red-400"
-                : "border-cyan-400/30 bg-cyan-400/10 text-cyan-400"
+                : "border-fuchsia-400/30 bg-fuchsia-400/10 text-fuchsia-400"
           }`}
         >
           {isReview ? "History review" : state.mode === "hard" ? "Hard mode" : "Balanced mode"}
@@ -199,13 +199,13 @@ export default function ScoreDisplay({
       <main className="flex-1 max-w-xl mx-auto w-full px-4 py-8 sm:py-10 space-y-7 screen-enter">
         {/* Grade label */}
         <div className="text-center space-y-1">
-          <p className="text-sm font-semibold text-[#64748B] uppercase tracking-widest">
+          <p className="text-sm font-semibold text-[#8D7FA0] uppercase tracking-widest">
             {isReview ? "Session review" : "Quiz complete"}
           </p>
-          <h1 className="text-fluid-grade font-extrabold text-[#E2E8F0] [overflow-wrap:anywhere]">
+          <h1 className="text-fluid-grade font-extrabold text-[#F0EAF6] [overflow-wrap:anywhere]">
             {grade}!
           </h1>
-          <p className="text-sm text-[#64748B]">
+          <p className="text-sm text-[#8D7FA0]">
             {stats.correct}/{stats.answered} correct · {topic || "Imported material"}
           </p>
         </div>
@@ -217,7 +217,7 @@ export default function ScoreDisplay({
         <div className="grid grid-cols-2 gap-3">
           <StatCard icon={<Target size={20} className="text-emerald-400" />} label="Accuracy" value={`${accuracy}%`} />
           <StatCard icon={<Flame size={20} className="text-orange-400" />} label="Best streak" value={`${stats.bestStreak}`} />
-          <StatCard icon={<Clock size={20} className="text-cyan-400" />} label="Avg time" value={`${avgTime}s`} />
+          <StatCard icon={<Clock size={20} className="text-fuchsia-400" />} label="Avg time" value={`${avgTime}s`} />
           <StatCard icon={<Lightbulb size={20} className="text-amber-400" />} label="Avg hints" value={avgHints} />
         </div>
 
@@ -230,7 +230,7 @@ export default function ScoreDisplay({
               </div>
               <div>
                 <p className="text-sm font-bold text-violet-300">AI Coach</p>
-                <p className="text-xs text-[#64748B]">Personalized feedback</p>
+                <p className="text-xs text-[#8D7FA0]">Personalized feedback</p>
               </div>
             </div>
             {coach && !isReview && (
@@ -249,14 +249,14 @@ export default function ScoreDisplay({
           </div>
 
           {coachPending ? (
-            <div className="flex items-center gap-2 text-xs text-[#94A3B8]">
+            <div className="flex items-center gap-2 text-xs text-[#B8A9C8]">
               <Loader2 size={14} className="animate-spin text-violet-400" />
               Analyzing your answers…
             </div>
           ) : coach ? (
             <div className="space-y-4">
               {coach.feedback && (
-                <p className="text-sm text-[#94A3B8] leading-relaxed [overflow-wrap:anywhere]">
+                <p className="text-sm text-[#B8A9C8] leading-relaxed [overflow-wrap:anywhere]">
                   {coach.feedback}
                 </p>
               )}
@@ -280,7 +280,7 @@ export default function ScoreDisplay({
               </div>
             </div>
           ) : (
-            <p className="text-xs text-[#64748B]">
+            <p className="text-xs text-[#8D7FA0]">
               {results.length > 0
                 ? "Couldn't load the AI analysis right now."
                 : "Finish the quiz to get AI feedback."}
@@ -290,7 +290,7 @@ export default function ScoreDisplay({
 
         {/* Question breakdown */}
         <div className="space-y-2">
-          <p className="text-xs font-semibold uppercase tracking-widest text-[#64748B]">
+          <p className="text-xs font-semibold uppercase tracking-widest text-[#8D7FA0]">
             Question breakdown
           </p>
           {results.map((r, i) => {
@@ -310,12 +310,12 @@ export default function ScoreDisplay({
                   <XCircle size={16} className="text-red-400 shrink-0 mt-0.5" />
                 )}
                 <div className="flex-1 min-w-0">
-                  <p className="text-[#94A3B8] line-clamp-2 leading-snug [overflow-wrap:anywhere]">
+                  <p className="text-[#B8A9C8] line-clamp-2 leading-snug [overflow-wrap:anywhere]">
                     {q?.question ?? `Question ${i + 1}`}
                   </p>
-                  <div className="flex gap-3 mt-1 text-xs text-[#64748B] flex-wrap">
+                  <div className="flex gap-3 mt-1 text-xs text-[#8D7FA0] flex-wrap">
                     <span>{r.timeTaken}s</span>
-                    <span className="text-cyan-400">+{r.pointsEarned} pts</span>
+                    <span className="text-fuchsia-400">+{r.pointsEarned} pts</span>
                     {r.hintsUsed > 0 && (
                       <span className="flex items-center gap-0.5">
                         <Zap size={10} className="text-amber-400" />
@@ -334,7 +334,7 @@ export default function ScoreDisplay({
           <button
             type="button"
             onClick={onBack}
-            className="w-full py-4 rounded-2xl font-bold text-base border-2 border-[#334155] text-[#E2E8F0] hover:border-[#475569] hover:bg-[#1E293B] transition-all"
+            className="w-full py-4 rounded-2xl font-bold text-base border-2 border-[#3A2E50] text-[#F0EAF6] hover:border-[#6E5F81] hover:bg-[#251C33] transition-all"
           >
             Back to Home
           </button>
@@ -343,14 +343,14 @@ export default function ScoreDisplay({
             <button
               type="button"
               onClick={restartQuiz}
-              className="flex-1 py-4 rounded-2xl font-bold text-base bg-gradient-to-r from-cyan-600 to-cyan-400 text-[#0F172A] hover:from-cyan-500 hover:to-cyan-300 transition-all shadow-lg shadow-cyan-500/20"
+              className="flex-1 py-4 rounded-2xl font-bold text-base bg-gradient-to-r from-fuchsia-600 to-fuchsia-400 text-[#151021] hover:from-fuchsia-500 hover:to-fuchsia-300 transition-all shadow-lg shadow-fuchsia-500/20"
             >
               Try Again
             </button>
             <button
               type="button"
               onClick={resetGame}
-              className="flex-1 py-4 rounded-2xl font-bold text-base border-2 border-[#334155] text-[#E2E8F0] hover:border-[#475569] hover:bg-[#1E293B] transition-all"
+              className="flex-1 py-4 rounded-2xl font-bold text-base border-2 border-[#3A2E50] text-[#F0EAF6] hover:border-[#6E5F81] hover:bg-[#251C33] transition-all"
             >
               New Quiz
             </button>
@@ -359,7 +359,7 @@ export default function ScoreDisplay({
       </main>
 
       {/* Footer credit */}
-      <footer className="text-center py-4 text-xs text-[#334155] flex items-center justify-center gap-1.5">
+      <footer className="text-center py-4 text-xs text-[#3A2E50] flex items-center justify-center gap-1.5">
         <Star size={10} className="text-violet-500" />
         GROQuiz
       </footer>
@@ -377,11 +377,11 @@ function StatCard({
   value: string;
 }) {
   return (
-    <div className="bg-[#1E293B] border border-[#334155] rounded-2xl p-4 flex items-center gap-4">
+    <div className="bg-[#251C33] border border-[#3A2E50] rounded-2xl p-4 flex items-center gap-4">
       <span className="shrink-0">{icon}</span>
       <div className="min-w-0">
-        <p className="text-xl font-bold text-[#E2E8F0] tabular-nums">{value}</p>
-        <p className="text-xs text-[#64748B]">{label}</p>
+        <p className="text-xl font-bold text-[#F0EAF6] tabular-nums">{value}</p>
+        <p className="text-xs text-[#8D7FA0]">{label}</p>
       </div>
     </div>
   );

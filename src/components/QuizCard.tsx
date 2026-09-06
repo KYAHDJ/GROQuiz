@@ -30,7 +30,7 @@ function highlightKeywords(text: string): React.ReactNode {
           key={i}
           className={
             top5.has(w.toLowerCase().trim())
-              ? "bg-amber-400/20 text-[#E2E8F0] rounded-[3px] px-0.5"
+              ? "bg-amber-400/20 text-[#F0EAF6] rounded-[3px] px-0.5"
               : ""
           }
         >
@@ -190,13 +190,13 @@ export default function QuizCard() {
   return (
     <div className="space-y-4">
       {/* Question card */}
-      <div className="bg-[#1E293B] rounded-2xl border border-[#334155] p-5 sm:p-6 space-y-5 screen-enter">
+      <div className="bg-[#251C33] rounded-2xl border border-[#3A2E50] p-5 sm:p-6 space-y-5 screen-enter">
         {/* Progress bar + timer row */}
         <div className="flex items-center gap-4">
-          <div className="flex-1 h-1.5 bg-[#0F172A] rounded-full overflow-hidden">
+          <div className="flex-1 h-1.5 bg-[#151021] rounded-full overflow-hidden">
             <div
               className={`h-full rounded-full transition-all duration-500 ${
-                mode === "hard" ? "bg-red-400" : "bg-cyan-400"
+                mode === "hard" ? "bg-red-400" : "bg-fuchsia-400"
               }`}
               style={{ width: `${progressPct}%` }}
             />
@@ -206,7 +206,7 @@ export default function QuizCard() {
 
         {/* Tag row */}
         <div className="flex flex-wrap items-center justify-between gap-2">
-          <span className="text-xs font-medium text-[#64748B] bg-[#0F172A] border border-[#334155] rounded-full px-3 py-1">
+          <span className="text-xs font-medium text-[#8D7FA0] bg-[#151021] border border-[#3A2E50] rounded-full px-3 py-1">
             {retryRound
               ? "Retry round"
               : mode === "hard"
@@ -221,21 +221,21 @@ export default function QuizCard() {
         </div>
 
         {freezeActive && (
-          <div className="bg-cyan-400/10 border border-cyan-400/30 rounded-xl px-4 py-2.5 text-xs text-cyan-300 flex items-center gap-2 screen-enter">
+          <div className="bg-fuchsia-400/10 border border-fuchsia-400/30 rounded-xl px-4 py-2.5 text-xs text-fuchsia-300 flex items-center gap-2 screen-enter">
             <Clock size={13} className="shrink-0" />
             <span className="flex-1">
               Timer frozen — {freezeLeft ?? 15}s left, take your time!
             </span>
-            <div className="w-16 h-1.5 bg-[#0F172A] rounded-full overflow-hidden shrink-0">
+            <div className="w-16 h-1.5 bg-[#151021] rounded-full overflow-hidden shrink-0">
               <div
-                className="h-full bg-cyan-400 rounded-full transition-all duration-1000"
+                className="h-full bg-fuchsia-400 rounded-full transition-all duration-1000"
                 style={{ width: `${((freezeLeft ?? 15) / 15) * 100}%` }}
               />
             </div>
           </div>
         )}
 
-        <h2 className="text-fluid-base font-semibold text-[#E2E8F0] leading-relaxed [overflow-wrap:anywhere]">
+        <h2 className="text-fluid-base font-semibold text-[#F0EAF6] leading-relaxed [overflow-wrap:anywhere]">
           {showKeywords ? highlightKeywords(q.question) : q.question}
         </h2>
 
@@ -266,31 +266,31 @@ export default function QuizCard() {
             const isCorrect = i === q.correctIndex;
 
             let rowClass =
-              "border-[#334155] bg-[#0F172A] text-[#94A3B8] hover:border-[#475569] hover:text-[#E2E8F0]";
+              "border-[#3A2E50] bg-[#151021] text-[#B8A9C8] hover:border-[#6E5F81] hover:text-[#F0EAF6]";
             let extra = "";
-            let badgeClass = `${badgeBase} border-[#334155] text-[#64748B]`;
+            let badgeClass = `${badgeBase} border-[#3A2E50] text-[#8D7FA0]`;
 
             if (answered) {
               if (isCorrect) {
                 rowClass = "border-emerald-400 bg-emerald-400/10 text-emerald-400";
-                badgeClass = `${badgeBase} border-emerald-400 bg-emerald-400 text-[#0F172A]`;
+                badgeClass = `${badgeBase} border-emerald-400 bg-emerald-400 text-[#151021]`;
               } else if (isSelected && !isCorrect) {
                 rowClass = "border-red-400 bg-red-400/10 text-red-400";
-                badgeClass = `${badgeBase} border-red-400 bg-red-400 text-[#0F172A]`;
+                badgeClass = `${badgeBase} border-red-400 bg-red-400 text-[#151021]`;
               } else {
-                rowClass = "border-[#334155] bg-[#0F172A] text-[#475569]";
+                rowClass = "border-[#3A2E50] bg-[#151021] text-[#6E5F81]";
               }
             } else if (isShrunk) {
               rowClass =
-                "border-[#334155] bg-[#0F172A] text-[#64748B] cursor-not-allowed";
+                "border-[#3A2E50] bg-[#151021] text-[#8D7FA0] cursor-not-allowed";
               extra = "scale-[0.92] origin-left py-1.5 text-xs opacity-70";
             } else if (isSelected) {
               rowClass =
-                "border-cyan-400 bg-cyan-400/10 text-[#E2E8F0] ring-2 ring-cyan-400/40";
-              badgeClass = `${badgeBase} border-cyan-400 bg-cyan-400 text-[#0F172A]`;
+                "border-fuchsia-400 bg-fuchsia-400/10 text-[#F0EAF6] ring-2 ring-fuchsia-400/40";
+              badgeClass = `${badgeBase} border-fuchsia-400 bg-fuchsia-400 text-[#151021]`;
             } else if (fiftyActive) {
               rowClass =
-                "border-[#475569] bg-[#1E293B] text-[#E2E8F0] hover:border-cyan-400/70";
+                "border-[#6E5F81] bg-[#251C33] text-[#F0EAF6] hover:border-fuchsia-400/70";
               extra = "py-4 text-base font-semibold";
             }
 
@@ -331,7 +331,7 @@ export default function QuizCard() {
 
         {/* Answered block */}
         {answered && (
-          <div className="space-y-3 border-t border-[#334155] pt-4 screen-enter">
+          <div className="space-y-3 border-t border-[#3A2E50] pt-4 screen-enter">
             <div
               className={`rounded-xl px-4 py-3 text-sm font-semibold ${
                 isCorrectAnswer
@@ -342,13 +342,13 @@ export default function QuizCard() {
               {isCorrectAnswer
                 ? "Correct! Nice work."
                 : `Incorrect — the answer was: ${q.options[q.correctIndex]}`}
-              <span className="ml-2 text-xs font-normal text-[#64748B]">
+              <span className="ml-2 text-xs font-normal text-[#8D7FA0]">
                 answered in {state.elapsed}s
               </span>
               {questionResult && (
                 <span
                   className={`ml-2 inline-flex items-center gap-1 text-xs font-bold tabular-nums ${
-                    isCorrectAnswer ? "text-emerald-400" : "text-[#94A3B8]"
+                    isCorrectAnswer ? "text-emerald-400" : "text-[#B8A9C8]"
                   }`}
                 >
                   +{questionResult.pointsEarned} pts
@@ -356,13 +356,13 @@ export default function QuizCard() {
               )}
             </div>
 
-            <div className="flex gap-4 bg-[#0F172A] rounded-xl border border-[#334155] p-4">
+            <div className="flex gap-4 bg-[#151021] rounded-xl border border-[#3A2E50] p-4">
               <div className="w-10 h-10 shrink-0 rounded-xl bg-amber-400/10 flex items-center justify-center">
                 <Trophy size={20} className="text-amber-400" />
               </div>
               <div className="min-w-0">
-                <p className="text-sm font-semibold text-[#E2E8F0] mb-1">Explanation</p>
-                <p className="text-sm text-[#94A3B8] leading-relaxed [overflow-wrap:anywhere]">
+                <p className="text-sm font-semibold text-[#F0EAF6] mb-1">Explanation</p>
+                <p className="text-sm text-[#B8A9C8] leading-relaxed [overflow-wrap:anywhere]">
                   {q.explanation}
                 </p>
               </div>
@@ -387,7 +387,7 @@ export default function QuizCard() {
             type="button"
             disabled={inventory["time-extension"] <= 0 || freezeActive || timerPaused}
             onClick={() => handleUsePowerup("time-extension")}
-            className="flex items-center gap-2 px-4 py-2 rounded-full border border-cyan-400/40 bg-cyan-400/10 text-cyan-400 text-xs font-semibold hover:bg-cyan-400/20 transition-all disabled:opacity-30 disabled:cursor-not-allowed"
+            className="flex items-center gap-2 px-4 py-2 rounded-full border border-fuchsia-400/40 bg-fuchsia-400/10 text-fuchsia-400 text-xs font-semibold hover:bg-fuchsia-400/20 transition-all disabled:opacity-30 disabled:cursor-not-allowed"
           >
             <Clock size={14} />
             {freezeActive ? "Frozen…" : "Freeze +15s"}{" "}
@@ -413,7 +413,7 @@ export default function QuizCard() {
             <BrainCircuit size={16} className="text-violet-400" />
             <span className="text-sm font-semibold text-violet-300">AI Clarifier</span>
           </div>
-          <p className="text-sm text-[#94A3B8] leading-relaxed [overflow-wrap:anywhere]">
+          <p className="text-sm text-[#B8A9C8] leading-relaxed [overflow-wrap:anywhere]">
             {loadingClarify ? (
               <span className="flex items-center gap-2">
                 <Loader2 size={13} className="animate-spin text-violet-400" />
@@ -433,7 +433,7 @@ export default function QuizCard() {
             type="button"
             disabled={selected === null}
             onClick={confirmAnswer}
-            className="w-full py-4 rounded-2xl font-bold text-base transition-all duration-200 disabled:opacity-30 disabled:cursor-not-allowed bg-gradient-to-r from-cyan-600 via-cyan-500 to-violet-500 text-white hover:from-cyan-500 hover:via-cyan-400 hover:to-violet-400 shadow-lg shadow-cyan-500/20"
+            className="w-full py-4 rounded-2xl font-bold text-base transition-all duration-200 disabled:opacity-30 disabled:cursor-not-allowed bg-gradient-to-r from-fuchsia-600 via-fuchsia-500 to-violet-500 text-white hover:from-fuchsia-500 hover:via-fuchsia-400 hover:to-violet-400 shadow-lg shadow-fuchsia-500/20"
           >
             Confirm Answer
           </button>
@@ -444,7 +444,7 @@ export default function QuizCard() {
             className={`w-full py-4 rounded-2xl font-bold text-base flex items-center justify-center gap-3 transition-all duration-200 ${
               lastRetry
                 ? "bg-gradient-to-r from-emerald-600 to-emerald-500 text-white hover:from-emerald-500 hover:to-emerald-400 shadow-lg shadow-emerald-500/20"
-                : "bg-gradient-to-r from-cyan-600 via-cyan-500 to-cyan-400 text-[#0F172A] hover:from-cyan-500 hover:to-cyan-300 shadow-lg shadow-cyan-500/20"
+                : "bg-gradient-to-r from-fuchsia-600 via-fuchsia-500 to-fuchsia-400 text-[#151021] hover:from-fuchsia-500 hover:to-fuchsia-300 shadow-lg shadow-fuchsia-500/20"
             }`}
           >
             {lastRetry ? "See Results" : "Next Question"}

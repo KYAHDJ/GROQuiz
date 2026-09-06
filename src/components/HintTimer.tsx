@@ -51,7 +51,7 @@ export default function HintTimer() {
             cy="32"
             r={radius}
             fill="none"
-            stroke="#1E293B"
+            stroke="#251C33"
             strokeWidth="4"
           />
           <circle
@@ -71,7 +71,7 @@ export default function HintTimer() {
         </svg>
         <span
           className={`absolute text-base font-bold tabular-nums ${
-            isLow ? "text-red-400" : "text-[#E2E8F0]"
+            isLow ? "text-red-400" : "text-[#F0EAF6]"
           }`}
         >
           {timeText}
@@ -84,8 +84,8 @@ export default function HintTimer() {
               key={i}
               className={`w-1.5 h-1.5 rounded-full transition-all duration-300 ${
                 i <= state.hintStage
-                  ? ["bg-cyan-400", "bg-amber-400", "bg-amber-400", "bg-red-400"][i]
-                  : "bg-[#334155]"
+                  ? ["bg-fuchsia-400", "bg-amber-400", "bg-amber-400", "bg-red-400"][i]
+                  : "bg-[#3A2E50]"
               }`}
             />
           ))}

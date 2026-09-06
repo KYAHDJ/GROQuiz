@@ -22,7 +22,7 @@ export default function QuestionNav() {
           className={`inline-flex items-center gap-1.5 text-xs font-bold rounded-full px-2.5 py-1 border ${
             mode === "hard"
               ? "bg-red-500/10 text-red-300 border-red-500/30"
-              : "bg-cyan-500/10 text-cyan-300 border-cyan-500/30"
+              : "bg-fuchsia-500/10 text-fuchsia-300 border-fuchsia-500/30"
           }`}
         >
           <Gauge size={12} />
@@ -38,8 +38,8 @@ export default function QuestionNav() {
           onClick={togglePause}
           className={`flex items-center gap-1.5 text-xs font-semibold rounded-full px-3 py-1 border transition-colors ${
             timerPaused
-              ? "bg-cyan-600 text-white border-cyan-600 hover:bg-cyan-500"
-              : "bg-[#1E293B] text-[#94A3B8] border-[#334155] hover:text-[#E2E8F0] hover:border-[#475569]"
+              ? "bg-fuchsia-600 text-white border-fuchsia-600 hover:bg-fuchsia-500"
+              : "bg-[#251C33] text-[#B8A9C8] border-[#3A2E50] hover:text-[#F0EAF6] hover:border-[#6E5F81]"
           }`}
         >
           {timerPaused ? <Play size={12} /> : <Pause size={12} />}
@@ -69,12 +69,12 @@ export default function QuestionNav() {
               }
               className={`relative h-8 min-w-8 px-2 rounded-lg text-xs font-bold flex items-center justify-center gap-1 border transition-all ${
                 isCurrent
-                  ? "bg-cyan-400 text-[#0F172A] border-cyan-400"
+                  ? "bg-fuchsia-400 text-[#151021] border-fuchsia-400"
                   : status === "correct"
                     ? "bg-emerald-400/20 text-emerald-400 border-emerald-400/40"
                     : status === "wrong"
                       ? "bg-red-400/20 text-red-400 border-red-400/40"
-                      : "bg-[#0F172A] text-[#64748B] border-[#334155] hover:border-[#475569] hover:text-[#94A3B8]"
+                      : "bg-[#151021] text-[#8D7FA0] border-[#3A2E50] hover:border-[#6E5F81] hover:text-[#B8A9C8]"
               } ${locked ? "cursor-not-allowed" : ""}`}
             >
               {status === "correct" ? (
@@ -82,7 +82,7 @@ export default function QuestionNav() {
               ) : status === "wrong" ? (
                 <X size={13} />
               ) : showLock ? (
-                <Lock size={11} className="text-[#475569]" />
+                <Lock size={11} className="text-[#6E5F81]" />
               ) : (
                 i + 1
               )}

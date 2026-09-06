@@ -15,7 +15,7 @@ const POWERUPS = [
     key: "time-extension" as const,
     name: "Time Extension",
     desc: "Pauses hint timer for 15s",
-    icon: <Clock size={18} className="text-cyan-400" />,
+    icon: <Clock size={18} className="text-fuchsia-400" />,
     cost: 75,
   },
   {
@@ -41,21 +41,21 @@ export default function PowerupShop({
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm px-4">
-      <div className="bg-[#1E293B] border border-[#334155] rounded-2xl p-6 max-w-sm w-full relative animate-slide-up">
+      <div className="bg-[#251C33] border border-[#3A2E50] rounded-2xl p-6 max-w-sm w-full relative animate-slide-up">
         <button
           onClick={onClose}
-          className="absolute top-4 right-4 text-slate-500 hover:text-slate-300 transition-colors"
+          className="absolute top-4 right-4 text-[#8D7FA0] hover:text-[#F0EAF6] transition-colors"
         >
           <X size={18} />
         </button>
 
         <div className="flex items-center gap-2 mb-4">
           <ShoppingBag size={18} className="text-emerald-400" />
-          <h3 className="text-lg font-bold text-[#E2E8F0]">Power-up Shop</h3>
+          <h3 className="text-lg font-bold text-[#F0EAF6]">Power-up Shop</h3>
         </div>
 
-        <div className="flex items-center gap-2 mb-5 bg-[#0F172A] rounded-xl px-3 py-2">
-          <span className="text-xs text-[#64748B]">Your Points</span>
+        <div className="flex items-center gap-2 mb-5 bg-[#151021] rounded-xl px-3 py-2">
+          <span className="text-xs text-[#8D7FA0]">Your Points</span>
           <span className="font-bold text-amber-400">{stats.points}</span>
         </div>
 
@@ -69,20 +69,20 @@ export default function PowerupShop({
                 onClick={() => {
                   buyPowerup(p.key, p.cost);
                 }}
-                className="w-full flex items-start gap-3 bg-[#0F172A] hover:bg-[#16202F] disabled:opacity-40 disabled:cursor-not-allowed border border-[#334155] rounded-xl p-3 text-left transition-colors"
+                className="w-full flex items-start gap-3 bg-[#151021] hover:bg-[#16202F] disabled:opacity-40 disabled:cursor-not-allowed border border-[#3A2E50] rounded-xl p-3 text-left transition-colors"
               >
                 <div className="mt-0.5">{p.icon}</div>
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center justify-between gap-2">
-                    <span className="font-semibold text-sm text-[#E2E8F0]">
+                    <span className="font-semibold text-sm text-[#F0EAF6]">
                       {p.name}
                     </span>
-                    <span className="text-xs font-medium text-[#94A3B8] bg-[#334155] rounded-full px-2 py-0.5 whitespace-nowrap">
+                    <span className="text-xs font-medium text-[#B8A9C8] bg-[#3A2E50] rounded-full px-2 py-0.5 whitespace-nowrap">
                       {p.cost} pts
                     </span>
                   </div>
-                  <p className="text-xs text-[#64748B] mt-0.5">{p.desc}</p>
-                  <p className="text-[10px] text-[#475569] mt-1">
+                  <p className="text-xs text-[#8D7FA0] mt-0.5">{p.desc}</p>
+                  <p className="text-[10px] text-[#6E5F81] mt-1">
                     Owned: {inventory[p.key]}
                   </p>
                 </div>

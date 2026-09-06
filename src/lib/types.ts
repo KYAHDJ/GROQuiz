@@ -15,6 +15,7 @@ export interface GenerateQuestionsRequest {
   pdfs?: { name?: string; url: string }[];
   topics?: string;
   count?: number;
+  previous?: string[];
   difficulty: Difficulty;
 }
 

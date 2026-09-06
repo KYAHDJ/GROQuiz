@@ -18,6 +18,8 @@ import {
   deleteHistoryFromFirebase,
   saveGameToFirebase,
   loadGameFromFirebase,
+  onFirebaseUser,
+  type FbUser,
 } from "@/lib/firebase/client";
 import type {
   Difficulty,
@@ -665,8 +667,18 @@ export function QuizProvider({ children }: { children: ReactNode }) {
     setHistory(loadHistory());
   }, []);
 
+  const [fbUser, setFbUser] = useState<FbUser | null>(null);
   useEffect(() => {
     if (!IS_FIREBASE_ENABLED) return;
+    return onFirebaseUser((u) => setFbUser(u));
+  }, []);
+
+  const hydratedUidRef = useRef<string>("__init__");
+  useEffect(() => {
+    if (!IS_FIREBASE_ENABLED) return;
+    const uid = fbUser?.uid ?? "__none__";
+    if (hydratedUidRef.current === uid) return;
+    hydratedUidRef.current = uid;
     let cancelled = false;
     (async () => {
       try {
@@ -703,7 +715,7 @@ export function QuizProvider({ children }: { children: ReactNode }) {
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [fbUser?.uid]);
 
   useEffect(() => {
     if (

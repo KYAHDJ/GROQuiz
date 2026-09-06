@@ -184,10 +184,13 @@ export async function POST(req: Request): Promise<NextResponse> {
   }
 
   const difficulty = Math.max(1, Math.min(5, Number(body.difficulty) || 3)) as Difficulty;
-  const perBlock = Math.max(3, Math.min(6, Number(body.count) || 5));
+  const perBlock = Math.max(4, Math.min(6, Number(body.count) || 5));
   const BLOCK_SIZE = 6000;
   const MAX_TOTAL = 30;
 
+  const previous = Array.isArray(body.previous)
+    ? body.previous.map((p) => String(p)).slice(0, 40)
+    : [];
   const blocks = chunkText(text, BLOCK_SIZE);
   const topicsLine = body.topics?.trim()
     ? `Focus on these topics: ${body.topics.trim()}\n`
@@ -206,7 +209,7 @@ export async function POST(req: Request): Promise<NextResponse> {
   const seedBase = Math.floor(Math.random() * 1_000_000);
 
   const all: FlashcardQuestion[] = [];
-  const usedStrings: string[] = [];
+  const usedStrings: string[] = [...previous];
   let lastError: string | null = null;
 
   for (let bi = 0; bi < blocks.length && all.length < MAX_TOTAL; bi++) {

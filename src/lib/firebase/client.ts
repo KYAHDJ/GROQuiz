@@ -5,6 +5,9 @@ import {
   getAuth,
   signInAnonymously,
   onAuthStateChanged,
+  signInWithEmailAndPassword,
+  createUserWithEmailAndPassword,
+  signOut as firebaseSignOut,
   type User,
 } from "firebase/auth";
 import {
@@ -66,6 +69,34 @@ let currentUser: User | null = null;
 const userWaiters: Array<(u: User | null) => void> = [];
 let authStarted = false;
 
+export interface FbUser {
+  uid: string;
+  email: string | null;
+  anonymous: boolean;
+}
+
+type FbListener = (u: FbUser | null) => void;
+const fbListeners = new Set<FbListener>();
+
+function toFbUser(u: User | null): FbUser | null {
+  if (!u) return null;
+  return { uid: u.uid, email: u.email, anonymous: u.isAnonymous };
+}
+
+function emitChange(): void {
+  const u = toFbUser(currentUser);
+  fbListeners.forEach((cb) => cb(u));
+}
+
+export function onFirebaseUser(cb: FbListener): () => void {
+  if (!client) return () => {};
+  fbListeners.add(cb);
+  cb(toFbUser(currentUser));
+  return () => {
+    fbListeners.delete(cb);
+  };
+}
+
 function startAuth(client_: FirebaseClient): void {
   if (authStarted) return;
   authStarted = true;
@@ -73,6 +104,7 @@ function startAuth(client_: FirebaseClient): void {
     onAuthStateChanged(client_.auth, (u) => {
       currentUser = u;
       userWaiters.splice(0).forEach((fn) => fn(u));
+      emitChange();
     });
     signInAnonymously(client_.auth).catch(() => {
       signInAnonymously(client_.auth).catch(() => {});
@@ -80,6 +112,7 @@ function startAuth(client_: FirebaseClient): void {
   } catch {
     currentUser = null;
     userWaiters.splice(0).forEach((fn) => fn(null));
+    emitChange();
   }
 }
 
@@ -89,6 +122,21 @@ export function getFirebaseUser(): Promise<User | null> {
   startAuth(client);
   if (currentUser) return Promise.resolve(currentUser);
   return new Promise((resolve) => userWaiters.push(resolve));
+}
+
+export function signInEmail(email: string, password: string): Promise<void> {
+  if (!client) return Promise.reject(new Error("Firebase is unavailable"));
+  return signInWithEmailAndPassword(client.auth, email, password).then(() => {});
+}
+
+export function signUpEmail(email: string, password: string): Promise<void> {
+  if (!client) return Promise.reject(new Error("Firebase is unavailable"));
+  return createUserWithEmailAndPassword(client.auth, email, password).then(() => {});
+}
+
+export async function signOutFb(): Promise<void> {
+  if (!client) return;
+  await firebaseSignOut(client.auth);
 }
 
 function makeSessionId(): string {
