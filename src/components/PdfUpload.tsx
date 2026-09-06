@@ -37,10 +37,11 @@ export default function PdfUpload({
       setProgressLabel("Generating questions…");
       setProgress(50);
 
-      const genBody = new FormData();
-      genBody.append("topics", topics);
-      genBody.append("text", text);
-      const genRes = await fetch("/api/generate-questions", { method: "POST", body: genBody });
+      const genRes = await fetch("/api/generate-questions", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ text, topics }),
+      });
       const genData = await genRes.json();
 
       if (!genRes.ok) {
