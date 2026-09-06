@@ -43,6 +43,7 @@ interface QuizState {
   screen: Screen;
   mode: QuizMode;
   questions: FlashcardQuestion[];
+  allQuestions: FlashcardQuestion[];
   currentIndex: number;
   isFlipped: boolean;
   selected: number | null;
@@ -50,6 +51,9 @@ interface QuizState {
   hintStage: HintStage;
   timerPaused: boolean;
   elapsed: number;
+  timeLimit: number;
+  retryIds: string[];
+  retryRound: boolean;
   fiftyFiftyUsed: boolean;
   stats: GameStats;
   inventory: PowerupInventory;
@@ -65,6 +69,7 @@ type QuizAction =
   | { type: "LOAD_QUESTIONS"; questions: FlashcardQuestion[] }
   | { type: "SET_SCREEN"; screen: Screen }
   | { type: "SET_MODE"; mode: QuizMode }
+  | { type: "SET_TIME_LIMIT"; seconds: number }
   | { type: "START_TIMER" }
   | { type: "TICK" }
   | { type: "TOGGLE_PAUSE" }
@@ -83,6 +88,7 @@ const initialState: QuizState = {
   screen: "landing",
   mode: "balanced",
   questions: [],
+  allQuestions: [],
   currentIndex: 0,
   isFlipped: false,
   selected: null,
@@ -90,6 +96,9 @@ const initialState: QuizState = {
   hintStage: 0,
   timerPaused: false,
   elapsed: 0,
+  timeLimit: 60,
+  retryIds: [],
+  retryRound: false,
   fiftyFiftyUsed: false,
   stats: { points: 0, streak: 0, bestStreak: 0, answered: 0, correct: 0, tier: 3 },
   inventory: { "50-50": 1, "time-extension": 1, "ai-clarifier": 1 },
@@ -125,6 +134,10 @@ function loadSave(): QuizState {
       ...initialState,
       mode,
       questions: saved.questions,
+      allQuestions: saved.allQuestions ?? saved.questions,
+      retryIds: saved.retryIds ?? [],
+      retryRound: saved.retryRound ?? false,
+      timeLimit: mode === "hard" ? 30 : Math.max(10, Math.min(180, saved.timeLimit ?? 60)),
       currentIndex: saved.currentIndex ?? 0,
       stats: saved.stats ?? defaultStats(mode),
       inventory: saved.inventory ?? initialState.inventory,
@@ -156,6 +169,10 @@ function persistSave(state: QuizState): void {
   }
   const saved: SavedGame = {
     questions: state.questions,
+    allQuestions: state.allQuestions,
+    retryIds: state.retryIds,
+    retryRound: state.retryRound,
+    timeLimit: state.timeLimit,
     currentIndex: state.currentIndex,
     stats: state.stats,
     inventory: state.inventory,
@@ -221,6 +238,7 @@ function reduce(state: QuizState, action: QuizAction): QuizState {
       return {
         ...state,
         questions: action.questions,
+        allQuestions: action.questions,
         currentIndex: 0,
         isFlipped: false,
         selected: null,
@@ -228,6 +246,8 @@ function reduce(state: QuizState, action: QuizAction): QuizState {
         hintStage: 0,
         timerPaused: false,
         elapsed: 0,
+        retryIds: [],
+        retryRound: false,
         fiftyFiftyUsed: false,
         screen: "quiz",
         results: [],
@@ -238,11 +258,18 @@ function reduce(state: QuizState, action: QuizAction): QuizState {
       return {
         ...state,
         mode: action.mode,
+        timeLimit: action.mode === "hard" ? 30 : state.timeLimit,
         stats: {
           ...state.stats,
           tier: action.mode === "hard" ? 4 : 3,
         },
       };
+
+    case "SET_TIME_LIMIT":
+      if (state.mode === "hard" || state.answered || state.screen !== "landing") {
+        return state;
+      }
+      return { ...state, timeLimit: Math.max(10, Math.min(180, action.seconds)) };
 
     case "SET_SCREEN":
       return { ...state, screen: action.screen };
@@ -262,7 +289,53 @@ function reduce(state: QuizState, action: QuizAction): QuizState {
     case "TICK": {
       if (state.answered || state.timerPaused) return state;
       const elapsed = state.elapsed + 1;
-      const hintStage = elapsed >= 30 ? 3 : elapsed >= 20 ? 2 : elapsed >= 10 ? 1 : 0;
+
+      if (elapsed >= state.timeLimit) {
+        const q = state.questions[state.currentIndex];
+        if (!q) return { ...state, elapsed: state.timeLimit, answered: true };
+        const hintStage = state.mode === "hard" ? 0 : state.hintStage;
+        const newTier =
+          state.mode === "hard"
+            ? 4
+            : (Math.max(1, state.stats.tier - 1) as Difficulty);
+        const result: QuestionResult = {
+          questionId: q.id,
+          correct: false,
+          timeTaken: state.timeLimit,
+          pointsEarned: 0,
+          hintsUsed: hintStage,
+        };
+        const retryIds =
+          state.retryRound || state.retryIds.includes(q.id)
+            ? state.retryIds
+            : [...state.retryIds, q.id];
+        return {
+          ...state,
+          elapsed: state.timeLimit,
+          answered: true,
+          isFlipped: true,
+          hintStage,
+          results: [...state.results, result],
+          retryIds,
+          stats: {
+            ...state.stats,
+            answered: state.stats.answered + 1,
+            streak: 0,
+            tier: newTier,
+          },
+        };
+      }
+
+      const hintStage =
+        state.mode === "hard"
+          ? 0
+          : elapsed >= state.timeLimit * 0.75
+            ? 3
+            : elapsed >= state.timeLimit * 0.5
+              ? 2
+              : elapsed >= state.timeLimit * 0.25
+                ? 1
+                : 0;
       return { ...state, elapsed, hintStage };
     }
 
@@ -270,6 +343,7 @@ function reduce(state: QuizState, action: QuizAction): QuizState {
       return { ...state, timerPaused: !state.timerPaused };
 
     case "GO_TO_QUESTION": {
+      if (state.mode === "hard" || state.retryRound) return state;
       const idx = Math.max(0, Math.min(state.questions.length - 1, action.index));
       if (idx === state.currentIndex || !state.questions[idx]) return state;
       const alreadyAnswered = state.results.some(
@@ -320,8 +394,11 @@ function reduce(state: QuizState, action: QuizAction): QuizState {
         streak: state.stats.streak,
         fiftyFiftyUsed: state.fiftyFiftyUsed,
       });
+      const points = state.retryRound ? Math.round(scoring.points * 0.5) : scoring.points;
+      const deltaTier = state.retryRound ? 0 : scoring.deltaTier;
+      const newStreak = state.retryRound ? state.stats.streak : scoring.newStreak;
 
-      const rawTier = state.stats.tier + scoring.deltaTier;
+      const rawTier = state.stats.tier + deltaTier;
       const newTier =
         state.mode === "hard"
           ? 4
@@ -331,18 +408,24 @@ function reduce(state: QuizState, action: QuizAction): QuizState {
         questionId: q.id,
         correct,
         timeTaken: state.elapsed,
-        pointsEarned: scoring.points,
+        pointsEarned: points,
         hintsUsed: state.hintStage,
       };
+
+      const retryIds =
+        !correct && !state.retryRound && !state.retryIds.includes(q.id)
+          ? [...state.retryIds, q.id]
+          : state.retryIds;
 
       return {
         ...state,
         answered: true,
         isFlipped: true,
+        retryIds,
         stats: {
-          points: state.stats.points + scoring.points,
-          streak: scoring.newStreak,
-          bestStreak: Math.max(state.stats.bestStreak, scoring.newStreak),
+          points: state.stats.points + points,
+          streak: newStreak,
+          bestStreak: Math.max(state.stats.bestStreak, newStreak),
           answered: state.stats.answered + 1,
           correct: state.stats.correct + (correct ? 1 : 0),
           tier: newTier,
@@ -353,20 +436,40 @@ function reduce(state: QuizState, action: QuizAction): QuizState {
 
     case "NEXT_QUESTION": {
       const nextIndex = state.currentIndex + 1;
-      if (nextIndex >= state.questions.length) {
-        return { ...state, screen: "results" };
+      if (nextIndex < state.questions.length) {
+        return {
+          ...state,
+          currentIndex: nextIndex,
+          isFlipped: false,
+          selected: null,
+          answered: false,
+          hintStage: 0,
+          timerPaused: false,
+          elapsed: 0,
+          fiftyFiftyUsed: false,
+        };
       }
-      return {
-        ...state,
-        currentIndex: nextIndex,
-        isFlipped: false,
-        selected: null,
-        answered: false,
-        hintStage: 0,
-        timerPaused: false,
-        elapsed: 0,
-        fiftyFiftyUsed: false,
-      };
+      if (!state.retryRound) {
+        const retryQuestions = state.allQuestions.filter((q) =>
+          state.retryIds.includes(q.id)
+        );
+        if (retryQuestions.length > 0) {
+          return {
+            ...state,
+            questions: retryQuestions,
+            retryRound: true,
+            currentIndex: 0,
+            isFlipped: false,
+            selected: null,
+            answered: false,
+            hintStage: 0,
+            timerPaused: false,
+            elapsed: 0,
+            fiftyFiftyUsed: false,
+          };
+        }
+      }
+      return { ...state, screen: "results" };
     }
 
     case "RESET_GAME":
@@ -374,6 +477,7 @@ function reduce(state: QuizState, action: QuizAction): QuizState {
         ...initialState,
         mode: state.mode,
         inventory: state.inventory,
+        timeLimit: state.mode === "hard" ? 30 : state.timeLimit,
         stats: defaultStats(state.mode),
       };
 
@@ -388,6 +492,7 @@ interface QuizContextValue {
   loadQuestions: (questions: FlashcardQuestion[]) => void;
   setScreen: (screen: Screen) => void;
   setMode: (mode: QuizMode) => void;
+  setTimeLimit: (seconds: number) => void;
   startTimer: () => void;
   tick: () => void;
   togglePause: () => void;
@@ -436,12 +541,12 @@ export function QuizProvider({ children }: { children: ReactNode }) {
         date: Date.now(),
         stats: state.stats,
         results: state.results,
-        questions: state.questions,
+        questions: state.allQuestions,
         points: state.results.reduce((a, r) => a + r.pointsEarned, 0),
       });
       setHistory(records);
     }
-  }, [state.screen, state.sessionId, state.results, state.stats, state.questions, state.currentTopics]);
+  }, [state.screen, state.sessionId, state.results, state.stats, state.allQuestions, state.currentTopics]);
 
   const value = useMemo<QuizContextValue>(() => {
     const currentQuestion = state.questions[state.currentIndex] ?? null;
@@ -451,6 +556,7 @@ export function QuizProvider({ children }: { children: ReactNode }) {
       loadQuestions: (questions) => dispatch({ type: "LOAD_QUESTIONS", questions }),
       setScreen: (screen) => dispatch({ type: "SET_SCREEN", screen }),
       setMode: (mode) => dispatch({ type: "SET_MODE", mode }),
+      setTimeLimit: (seconds) => dispatch({ type: "SET_TIME_LIMIT", seconds }),
       startTimer: () => dispatch({ type: "START_TIMER" }),
       tick: () => dispatch({ type: "TICK" }),
       togglePause: () => dispatch({ type: "TOGGLE_PAUSE" }),

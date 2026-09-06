@@ -33,7 +33,7 @@ export default function ScoreDisplay({
   const isReview = Boolean(record);
   const stats = record ? record.stats : state.stats;
   const results = record ? record.results : state.results;
-  const questions = record ? record.questions : state.questions;
+  const questions = record ? record.questions : state.allQuestions;
   const topic = record ? record.topic : state.currentTopics;
   const accuracy = stats.answered
     ? Math.round((stats.correct / stats.answered) * 100)

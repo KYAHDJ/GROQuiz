@@ -51,7 +51,10 @@ export default function QuizCard() {
     currentQuestion,
   } = useQuiz();
 
-  const { selected, answered, hintStage, timerPaused, inventory, mode } = state;
+  const { selected, answered, hintStage, timerPaused, inventory, mode, retryRound } =
+    state;
+
+  const hintsOn = mode === "balanced";
 
   const q: FlashcardQuestion | null = currentQuestion;
 
@@ -94,11 +97,19 @@ export default function QuizCard() {
     setFreezeActive(false);
   }, [q?.id]);
 
-  const showTip = hintStage >= 2 && !answered;
-  const showKeywords = hintStage >= 1 && !answered;
+  const showTip = hintsOn && hintStage >= 2 && !answered;
+  const showKeywords = hintsOn && hintStage >= 1 && !answered;
 
   useEffect(() => {
-    if (showTip && !hintFetched && q) {
+    if (hintsOn && hintStage >= 3 && q && !answered && !fiftyActive && !shrinkPickedRef.current) {
+      shrinkPickedRef.current = true;
+      setShrunk(pickTwoWrong(q));
+      setFiftyActive(true);
+    }
+  }, [hintStage, hintsOn, q, answered, fiftyActive, pickTwoWrong]);
+
+  useEffect(() => {
+    if (hintsOn && showTip && !hintFetched && q) {
       setHintFetched(true);
       fetch("/api/hint", {
         method: "POST",
@@ -163,10 +174,6 @@ export default function QuizCard() {
 
   const handleUseFiftyFifty = () => {
     if (inventory["50-50"] <= 0 || answered || fiftyActive) return;
-    if (shrinkPickedRef.current) {
-      setFiftyActive(true);
-      return;
-    }
     usePowerup("50-50");
     shrinkPickedRef.current = true;
     setShrunk(pickTwoWrong(q));
@@ -184,7 +191,7 @@ export default function QuizCard() {
       <div className="bg-slate-800/80 border border-slate-700/60 rounded-2xl p-6 sm:p-8 space-y-5">
         <div className="flex items-center justify-between">
           <p className="text-sm text-slate-500 font-medium">
-            Q{state.currentIndex + 1}/{state.questions.length}
+            {retryRound ? `Retry Q${state.currentIndex + 1}/${state.questions.length}` : `Q${state.currentIndex + 1}/${state.questions.length}`}
           </p>
           {answered && (
             <span
@@ -222,7 +229,7 @@ export default function QuizCard() {
         {fiftyActive && !answered && (
           <div className="bg-slate-700/30 border border-slate-600/30 rounded-xl px-4 py-2 text-xs text-slate-400 flex items-center gap-2">
             <Zap size={13} className="shrink-0 text-yellow-400" />
-            50/50 used — smaller options are probably wrong. You decide.
+            Smaller options are probably wrong — bigger one stands out. You decide.
           </div>
         )}
 
@@ -247,12 +254,12 @@ export default function QuizCard() {
                 optStyle = "bg-slate-900/30 border-slate-800 text-slate-500";
               }
             } else if (isShrunk) {
-              optStyle = "bg-slate-900/40 border-slate-800 text-slate-500 opacity-60";
-              extraClasses = "py-1.5 text-xs";
+              optStyle = "bg-slate-900/40 border-slate-800 text-slate-500";
+              extraClasses = "opacity-50 scale-[0.92] py-1.5 text-xs";
             } else if (isBoosted) {
               optStyle =
-                "bg-emerald-500/15 border-emerald-500/60 text-emerald-200 ring-1 ring-emerald-500/40";
-              extraClasses = "scale-[1.03] font-semibold";
+                "bg-emerald-500/15 border-emerald-500/60 text-emerald-200 ring-2 ring-emerald-500/50";
+              extraClasses = "scale-[1.06] font-semibold py-4";
             } else if (isSelected) {
               optStyle = "bg-cyan-500/10 border-cyan-500/40 text-cyan-200";
             }

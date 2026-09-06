@@ -5,7 +5,7 @@ import { useQuiz } from "@/context/QuizContext";
 
 export default function HintTimer() {
   const { state, tick } = useQuiz();
-  const { elapsed, answered, timerPaused } = state;
+  const { elapsed, answered, timerPaused, timeLimit, mode } = state;
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   useEffect(() => {
@@ -19,22 +19,28 @@ export default function HintTimer() {
     };
   }, [answered, timerPaused, tick]);
 
-  const pct = Math.min((elapsed / 60) * 100, 100);
+  const remaining = Math.max(0, timeLimit - elapsed);
+  const pct = Math.min((elapsed / timeLimit) * 100, 100);
   const circumference = 2 * Math.PI * 28;
   const offset = circumference - (pct / 100) * circumference;
 
   let colorClass = "stroke-slate-400";
-  if (elapsed >= 30) colorClass = "stroke-red-500";
-  else if (elapsed >= 20) colorClass = "stroke-amber-500";
-  else if (elapsed >= 10) colorClass = "stroke-yellow-400";
+  if (pct >= 75) colorClass = "stroke-red-500";
+  else if (pct >= 50) colorClass = "stroke-amber-500";
+  else if (pct >= 25) colorClass = "stroke-yellow-400";
 
   const urgency =
-    elapsed >= 50 ? "Time's up — pick your best guess!"
-    : elapsed >= 40 ? "Hurry — every second counts!"
-    : elapsed >= 30 ? "Answer now to avoid a score penalty!"
-    : elapsed >= 20 ? "Hint active!"
-    : elapsed >= 10 ? "Keywords highlighted!"
-    : "";
+    remaining <= timeLimit * 0.1
+      ? "Time's up — pick your best guess!"
+      : remaining <= timeLimit * 0.3
+        ? "Hurry — every second counts!"
+        : remaining <= timeLimit * 0.5
+          ? "Answer now to avoid a score penalty!"
+          : mode === "balanced" && remaining <= timeLimit * 0.75
+            ? "Hint active!"
+            : mode === "balanced" && remaining <= timeLimit * 0.9
+              ? "Keywords highlighted!"
+              : "";
 
   return (
     <div className="flex flex-col items-center gap-1">
@@ -62,25 +68,27 @@ export default function HintTimer() {
           />
         </svg>
         <span className="absolute inset-0 flex items-center justify-center text-xs font-bold text-slate-200 tabular-nums">
-          {elapsed}s
+          {remaining}s
         </span>
       </div>
-      <div className="flex gap-1">
-        {[0, 1, 2, 3].map((i) => (
-          <div
-            key={i}
-            className={`w-1.5 h-1.5 rounded-full transition-all duration-300 ${
-              i <= state.hintStage
-                ? ["bg-slate-500", "bg-yellow-400", "bg-amber-400", "bg-red-400"][i]
-                : "bg-slate-800"
-            }`}
-          />
-        ))}
-      </div>
+      {mode === "balanced" && (
+        <div className="flex gap-1">
+          {[0, 1, 2, 3].map((i) => (
+            <div
+              key={i}
+              className={`w-1.5 h-1.5 rounded-full transition-all duration-300 ${
+                i <= state.hintStage
+                  ? ["bg-slate-500", "bg-yellow-400", "bg-amber-400", "bg-red-400"][i]
+                  : "bg-slate-800"
+              }`}
+            />
+          ))}
+        </div>
+      )}
       {urgency && (
         <p
           className={`text-[10px] font-medium text-center max-w-[80px] leading-tight ${
-            elapsed >= 30 ? "text-red-400" : elapsed >= 20 ? "text-amber-400" : "text-yellow-400"
+            remaining <= timeLimit * 0.3 ? "text-red-400" : "text-amber-400"
           }`}
         >
           {urgency}

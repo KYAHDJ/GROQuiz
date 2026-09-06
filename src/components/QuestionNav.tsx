@@ -5,7 +5,10 @@ import { useQuiz, DIFFICULTY_LABELS } from "@/context/QuizContext";
 
 export default function QuestionNav() {
   const { state, goToQuestion, togglePause } = useQuiz();
-  const { questions, results, currentIndex, timerPaused, mode, stats } = state;
+  const { questions, results, currentIndex, timerPaused, mode, stats, retryRound } =
+    state;
+
+  const locked = mode === "hard";
 
   const answeredFor = (i: number) => {
     const r = results.find((x) => x.questionId === questions[i]?.id);
@@ -23,9 +26,11 @@ export default function QuestionNav() {
           }`}
         >
           <Gauge size={12} />
-          {mode === "hard"
-            ? `Hard · ${DIFFICULTY_LABELS[4]} (no powerups)`
-            : `${DIFFICULTY_LABELS[stats.tier]} · adjusts as you answer`}
+          {retryRound
+            ? "Retry round — fix the ones you missed"
+            : mode === "hard"
+              ? `Hard · ${DIFFICULTY_LABELS[4]} · locked order · 30s each`
+              : `${DIFFICULTY_LABELS[stats.tier]} · adjusts as you answer`}
         </span>
 
         <button
@@ -50,9 +55,18 @@ export default function QuestionNav() {
             <button
               key={i}
               type="button"
+              disabled={locked}
               onClick={() => goToQuestion(i)}
-              title={`Question ${i + 1}${status === "correct" ? " (correct)" : status === "wrong" ? " (missed)" : ""}`}
+              title={
+                locked
+                  ? "Locked — answer in order"
+                  : `Question ${i + 1}${status === "correct" ? " (correct)" : status === "wrong" ? " (missed)" : ""}`
+              }
               className={`relative w-8 h-8 rounded-lg text-xs font-bold flex items-center justify-center border transition-all ${
+                locked
+                  ? "cursor-not-allowed"
+                  : ""
+              } ${
                 isCurrent
                   ? "bg-cyan-600 text-white border-cyan-400 ring-1 ring-cyan-400"
                   : status === "correct"

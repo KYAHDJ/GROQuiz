@@ -69,6 +69,10 @@ export interface HistoryRecord {
 
 export interface SavedGame {
   questions: FlashcardQuestion[];
+  allQuestions: FlashcardQuestion[];
+  retryIds: string[];
+  retryRound: boolean;
+  timeLimit: number;
   currentIndex: number;
   stats: GameStats;
   inventory: PowerupInventory;

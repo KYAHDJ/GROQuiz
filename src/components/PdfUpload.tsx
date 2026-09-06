@@ -11,6 +11,7 @@ import {
   X,
   Scale,
   Lock,
+  Clock4,
 } from "lucide-react";
 import { useQuiz } from "@/context/QuizContext";
 import type {
@@ -20,6 +21,7 @@ import type {
 } from "@/lib/types";
 
 const MAX_PDF_MB = 4;
+const TIME_OPTIONS = [15, 30, 45, 60, 90];
 
 export default function PdfUpload({
   onReview,
@@ -31,6 +33,7 @@ export default function PdfUpload({
     loadQuestions,
     setScreen,
     setMode,
+    setTimeLimit,
     state,
     hasSavedGame,
     resumeGame,
@@ -209,6 +212,44 @@ export default function PdfUpload({
             Locked at Hard — no power-ups, just you and the questions.
           </span>
         </button>
+      </div>
+
+      {/* Time limit */}
+      <div className="bg-slate-800/40 border border-slate-700/60 rounded-2xl p-4">
+        <p className="text-xs font-medium text-slate-400 mb-2">
+          {mode === "hard"
+            ? "Time per question"
+            : "Pick your time limit per question"}
+        </p>
+        {mode === "hard" ? (
+          <p className="text-sm text-slate-300 font-semibold flex items-center gap-2">
+            <Clock4 size={15} className="text-red-400" />
+            30 seconds — fixed in Hard mode
+          </p>
+        ) : (
+          <div className="flex flex-wrap gap-2">
+            {TIME_OPTIONS.map((s) => {
+              const active = state.timeLimit === s;
+              return (
+                <button
+                  key={s}
+                  type="button"
+                  onClick={() => setTimeLimit(s)}
+                  className={`rounded-xl px-4 py-2 text-sm font-semibold border transition-all ${
+                    active
+                      ? "bg-cyan-600 text-white border-cyan-500"
+                      : "bg-slate-900/60 text-slate-300 border-slate-700 hover:border-cyan-500/50 hover:text-slate-100"
+                  }`}
+                >
+                  {s}s
+                </button>
+              );
+            })}
+            <span className="text-xs text-slate-500 self-center ml-1">
+              Time out = marked wrong, then a retry at the end.
+            </span>
+          </div>
+        )}
       </div>
 
       {hasSavedGame && state.screen === "landing" && (
