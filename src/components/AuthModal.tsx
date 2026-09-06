@@ -12,20 +12,28 @@ import {
 } from "@/lib/firebase/client";
 
 function friendlyError(err: unknown): string {
-  const msg = err instanceof Error ? err.message : "";
+  const msg = (err instanceof Error ? err.message : "").toLowerCase();
   if (msg.includes("email-already-in-use")) return "That email is already registered. Sign in instead.";
-  if (msg.includes("wrong-password")) return "Wrong password. Try again.";
+  if (msg.includes("wrong-password") || msg.includes("invalid-credential")) return "Wrong password for that email.";
   if (msg.includes("user-not-found")) return "No account with that email — create one first.";
   if (msg.includes("invalid-email")) return "That email doesn't look valid.";
   if (msg.includes("weak-password")) return "Password is too weak — use at least 6 characters.";
   if (msg.includes("too-many-requests")) return "Too many attempts. Wait a minute, then try again.";
   if (msg.includes("network-request-failed")) return "No internet connection. Try again.";
+  if (msg.includes("unauthorized-domain")) {
+    return "This website's domain isn't allowed yet. In Firebase → Authentication → Settings → Authorized domains, add groquiz.vercel.app (and localhost), then try again.";
+  }
   if (msg.includes("operation-not-allowed") || msg.includes("configuration-not-found")) {
-    return "Google sign-in isn't enabled in the Firebase console yet.";
+    return "This sign-in method isn't switched on yet in Firebase → Authentication → Sign-in method (enable Google and Email/Password), then try again.";
   }
-  if (msg.includes("popup-closed-by-user") || msg.includes("cancelled-popup-request")) {
-    return "";
+  if (msg.includes("admin-restricted-operation")) {
+    return "This sign-in method needs to be enabled in Firebase → Authentication → Sign-in method.";
   }
+  if (msg.includes("popup-blocked")) {
+    return "The sign-in popup was blocked — allow popups for this site, then try again.";
+  }
+  if (msg.includes("popup-closed-by-user") || msg.includes("cancelled-popup-request")) return "";
+  if (msg.includes("user-disabled")) return "This account has been disabled.";
   return "That didn't work. Please try again.";
 }
 
