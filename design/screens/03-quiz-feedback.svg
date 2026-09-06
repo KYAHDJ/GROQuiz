@@ -1,0 +1,79 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1280" height="900" viewBox="0 0 1280 900">
+  <defs>
+    <radialGradient id="glow" cx="50%" cy="0%" r="90%">
+      <stop offset="0%" stop-color="#1E293B"/>
+      <stop offset="100%" stop-color="#0F172A"/>
+    </radialGradient>
+    <linearGradient id="btnCyan" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#22D3EE"/>
+      <stop offset="100%" stop-color="#0891B2"/>
+    </linearGradient>
+  </defs>
+
+  <rect width="1280" height="900" fill="url(#glow)"/>
+  <g font-family="Inter, Segoe UI, sans-serif">
+
+    <!-- Top bar -->
+    <g>
+      <rect x="392" y="56" width="40" height="40" rx="12" fill="#1E293B" stroke="#334155" stroke-width="1.5"/>
+      <text x="412" y="82" font-size="16" fill="#94A3B8">←</text>
+      <text x="640" y="82" text-anchor="middle" font-size="15" font-weight="700" fill="#E2E8F0">Q3 / 10</text>
+      <rect x="788" y="58" width="100" height="36" rx="12" fill="#0E2A33" stroke="#155E75" stroke-width="1.5"/>
+      <text x="838" y="82" text-anchor="middle" font-size="14" font-weight="700" fill="#67E8F9">430</text>
+    </g>
+
+    <rect x="392" y="116" width="496" height="640" rx="20" fill="#1A2333" stroke="#334155" stroke-width="1.5"/>
+
+    <!-- Progress + timer -->
+    <rect x="416" y="140" width="368" height="8" rx="4" fill="#122036"/>
+    <rect x="416" y="140" width="184" height="8" rx="4" fill="#22D3EE"/>
+    <text x="880" y="152" font-family="Consolas, monospace" font-size="15" font-weight="700" fill="#09B9CE" text-anchor="end">0:19</text>
+
+    <!-- Result chip -->
+    <rect x="700" y="108" width="188" height="34" rx="12" fill="#0B1C14" stroke="#14532D" stroke-width="1.5"/>
+    <text x="716" y="130" font-size="13" font-weight="800" fill="#34D399">✓ Correct!</text>
+
+    <!-- Question -->
+    <text x="416" y="204" font-size="20" font-weight="700" fill="#E2E8F0">If a person's blood cannot</text>
+    <text x="416" y="232" font-size="20" font-weight="700" fill="#E2E8F0">
+      deliver <tspan fill="#FDE047" text-decoration="underline">oxygen</tspan> to <tspan fill="#FDE047" text-decoration="underline">tissues</tspan>,
+    </text>
+    <text x="416" y="260" font-size="20" font-weight="700" fill="#E2E8F0">which problem is most likely?</text>
+
+    <!-- Options (answered) -->
+    <g>
+      <rect x="416" y="292" width="448" height="56" rx="14" fill="#0E2118" stroke="#14532D" stroke-width="1.5"/>
+      <circle cx="442" cy="320" r="13" fill="#14532D" stroke="#34D399" stroke-width="1.5"/>
+      <text x="442" y="325" text-anchor="middle" font-size="11" font-weight="700" fill="#6EE7B7">A</text>
+      <text x="466" y="325" font-size="14" fill="#6EE7B7">Oxygen reaches body tissues ✓</text>
+
+      <rect x="416" y="360" width="448" height="56" rx="14" fill="#0E2118" stroke="#14532D" stroke-width="1.5"/>
+      <circle cx="442" cy="388" r="13" fill="#14532D" stroke="#34D399" stroke-width="1.5"/>
+      <text x="442" y="393" text-anchor="middle" font-size="11" font-weight="700" fill="#6EE7B7">B</text>
+      <text x="466" y="393" font-size="14" fill="#6EE7B7">The heart pumps blood effectively ✓</text>
+
+      <rect x="416" y="428" width="448" height="56" rx="14" fill="#211515" stroke="#7F1D1D" stroke-width="1.5"/>
+      <circle cx="442" cy="456" r="13" fill="#7F1D1D" stroke="#F87171" stroke-width="1.5"/>
+      <text x="442" y="461" text-anchor="middle" font-size="11" font-weight="700" fill="#FCA5A5">C</text>
+      <text x="466" y="461" font-size="14" fill="#FCA5A5">Carbon dioxide is stored in muscles ✗</text>
+
+      <rect x="416" y="496" width="448" height="56" rx="14" fill="#121A28" stroke="#1E293B" stroke-width="1.5"/>
+      <circle cx="442" cy="524" r="13" fill="#1E293B" stroke="#334155" stroke-width="1.5"/>
+      <text x="442" y="529" text-anchor="middle" font-size="11" font-weight="700" fill="#64748B">D</text>
+      <text x="466" y="529" font-size="14" fill="#64748B">Vessels begin to contract on their own</text>
+    </g>
+
+    <!-- Explanation -->
+    <rect x="416" y="572" width="448" height="88" rx="14" fill="#0E2A33" stroke="#155E75" stroke-width="1.5"/>
+    <circle cx="444" cy="596" r="13" fill="#155E75"/>
+    <text x="444" y="601" text-anchor="middle" font-size="12" fill="#67E8F9">🏆</text>
+    <text x="468" y="596" font-size="11.5" font-weight="700" fill="#67E8F9">EXPLANATION</text>
+    <text x="468" y="616" font-size="12" fill="#A5F3FC">Blood carries oxygen throughout the body, so a</text>
+    <text x="468" y="634" font-size="12" fill="#A5F3FC">pumping heart is what keeps it moving — make it</text>
+    <text x="468" y="652" font-size="12" fill="#A5F3FC">strong, and tissues get the oxygen they need.</text>
+
+    <!-- Next -->
+    <rect x="416" y="680" width="448" height="48" rx="14" fill="url(#btnCyan)"/>
+    <text x="640" y="709" text-anchor="middle" font-size="15" font-weight="700" fill="#061821">Next Question →</text>
+  </g>
+</svg>

@@ -1,0 +1,32 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1280" height="900" viewBox="0 0 1280 900">
+  <defs>
+    <linearGradient id="btnCyan" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#22D3EE"/>
+      <stop offset="100%" stop-color="#0891B2"/>
+    </linearGradient>
+  </defs>
+
+  <!-- Dimmed background (blurred app hint shown beneath) -->
+  <rect width="1280" height="900" fill="#0B1626" opacity="0.95"/>
+  <rect x="392" y="80" width="496" height="360" rx="20" fill="#1A2333" opacity="0.25"/>
+  <rect x="416" y="120" width="368" height="8" rx="4" fill="#334155" opacity="0.3"/>
+  <rect x="416" y="160" width="400" height="48" rx="14" fill="#334155" opacity="0.3"/>
+  <rect x="416" y="220" width="448" height="56" rx="14" fill="#334155" opacity="0.3"/>
+  <rect x="416" y="288" width="448" height="56" rx="14" fill="#334155" opacity="0.3"/>
+  <rect x="416" y="356" width="448" height="56" rx="14" fill="#334155" opacity="0.3"/>
+
+  <!-- Pause modal -->
+  <rect x="440" y="260" width="400" height="380" rx="24" fill="#16202F" stroke="#22D3EE" stroke-width="2"/>
+  <circle cx="640" cy="312" r="34" fill="#0E2A33" stroke="#155E75" stroke-width="2"/>
+  <text x="632" y="320" font-size="20" fill="#67E8F9">⏸</text>
+  <text x="640" y="378" text-anchor="middle" font-size="22" font-weight="800" fill="#E2E8F0">Quiz paused</text>
+  <text x="640" y="406" text-anchor="middle" font-size="13" fill="#94A3B8">Your question timer is paused too —</text>
+  <text x="640" y="426" text-anchor="middle" font-size="13" fill="#94A3B8">it picks back up the moment you return.</text>
+
+  <rect x="480" y="458" width="320" height="50" rx="14" fill="url(#btnCyan)"/>
+  <text x="640" y="489" text-anchor="middle" font-size="15" font-weight="700" fill="#061821">Resume quiz</text>
+  <rect x="480" y="520" width="320" height="50" rx="14" fill="none" stroke="#334155" stroke-width="1.5"/>
+  <text x="640" y="551" text-anchor="middle" font-size="15" font-weight="600" fill="#CBD5E1">Exit to home</text>
+
+  <text x="640" y="600" text-anchor="middle" font-size="11" fill="#475569">Leaving a question keeps your progress and time — nothing is lost.</text>
+</svg>
