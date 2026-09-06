@@ -11,7 +11,8 @@ export interface FlashcardQuestion {
 }
 
 export interface GenerateQuestionsRequest {
-  text: string;
+  text?: string;
+  pdfs?: { name?: string; url: string }[];
   topics?: string;
   count?: number;
   difficulty: Difficulty;

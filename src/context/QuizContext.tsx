@@ -11,6 +11,14 @@ import {
   useState,
   type ReactNode,
 } from "react";
+import {
+  IS_FIREBASE_ENABLED,
+  saveHistoryToFirebase,
+  loadHistoryFromFirebase,
+  deleteHistoryFromFirebase,
+  saveGameToFirebase,
+  loadGameFromFirebase,
+} from "@/lib/firebase/client";
 import type {
   Difficulty,
   FlashcardQuestion,
@@ -175,11 +183,11 @@ function loadHistory(): HistoryRecord[] {
   }
 }
 
-function persistSave(state: QuizState): void {
-  if (typeof window === "undefined") return;
+function persistSave(state: QuizState): SavedGame | null {
+  if (typeof window === "undefined") return null;
   if (state.screen === "landing" || state.questions.length === 0) {
     localStorage.removeItem(SAVE_KEY);
-    return;
+    return null;
   }
   const activeQuestion = state.questions[state.currentIndex];
   const saved: SavedGame = {
@@ -203,6 +211,7 @@ function persistSave(state: QuizState): void {
     savedAt: Date.now(),
   };
   localStorage.setItem(SAVE_KEY, JSON.stringify(saved));
+  return saved;
 }
 
 function persistHistory(record: HistoryRecord): HistoryRecord[] {
@@ -610,6 +619,8 @@ export function QuizProvider({ children }: { children: ReactNode }) {
   const recordedSessionRef = useRef<string | null>(null);
   const stateRef = useRef(state);
   stateRef.current = state;
+  const lastSavedSigRef = useRef<string>("");
+  const hadSavedRef = useRef(false);
   const adaptTokenRef = useRef(0);
   const [hintCache, setHintCache] = useState<Record<string, string>>({});
   const hintCacheRef = useRef<Record<string, string>>({});
@@ -625,11 +636,73 @@ export function QuizProvider({ children }: { children: ReactNode }) {
       restored = false;
     }
     setHasSavedGame(state.questions.length > 0 || restored);
-    persistSave(state);
+    const saved = persistSave(state);
+    if (!IS_FIREBASE_ENABLED) return;
+    let cancelled = false;
+    const sig = saved
+      ? `${state.sessionId}|${state.currentIndex}|${state.results.length}|${state.stats.points}|${state.screen}`
+      : "";
+    const timer = setTimeout(() => {
+      if (cancelled) return;
+      if (saved) {
+        if (sig === lastSavedSigRef.current) return;
+        lastSavedSigRef.current = sig;
+        hadSavedRef.current = true;
+        void saveGameToFirebase(saved);
+      } else if (hadSavedRef.current && lastSavedSigRef.current) {
+        lastSavedSigRef.current = "";
+        hadSavedRef.current = false;
+        void saveGameToFirebase(null);
+      }
+    }, 900);
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+    };
   }, [state]);
 
   useEffect(() => {
     setHistory(loadHistory());
+  }, []);
+
+  useEffect(() => {
+    if (!IS_FIREBASE_ENABLED) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const [remoteHistory, remoteSave] = await Promise.all([
+          loadHistoryFromFirebase(),
+          loadGameFromFirebase(),
+        ]);
+        if (cancelled) return;
+        const local = loadHistory();
+        let merged: HistoryRecord[] | null = null;
+        if (remoteHistory && remoteHistory.length > 0) merged = remoteHistory;
+        else if (local.length > 0) merged = local;
+        if (merged) {
+          setHistory(merged);
+          if (remoteHistory && remoteHistory.length === 0) {
+            void saveHistoryToFirebase(merged);
+          }
+        }
+        if (remoteSave && Array.isArray(remoteSave.questions) && remoteSave.questions.length > 0) {
+          const cur = stateRef.current;
+          if (cur.screen === "landing" && cur.questions.length === 0) {
+            try {
+              localStorage.setItem(SAVE_KEY, JSON.stringify(remoteSave));
+            } catch {
+              // ignore storage errors
+            }
+            setHasSavedGame(true);
+          }
+        }
+      } catch {
+        // keep local storage
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   useEffect(() => {
@@ -650,6 +723,7 @@ export function QuizProvider({ children }: { children: ReactNode }) {
         points: state.results.reduce((a, r) => a + r.pointsEarned, 0),
       });
       setHistory(records);
+      if (IS_FIREBASE_ENABLED) void saveHistoryToFirebase(records);
     }
   }, [state.screen, state.sessionId, state.results, state.stats, state.allQuestions, state.currentTopics]);
 
@@ -797,19 +871,22 @@ export function QuizProvider({ children }: { children: ReactNode }) {
       hasSavedGame,
       history,
       deleteHistory: (id) => {
-        setHistory((prev) => {
-          const next = prev.filter((r) => r.id !== id);
-          try {
-            localStorage.setItem(HISTORY_KEY, JSON.stringify(next));
-          } catch {
-            // ignore storage errors
-          }
-          return next;
-        });
+        const next = history.filter((r) => r.id !== id);
+        try {
+          localStorage.setItem(HISTORY_KEY, JSON.stringify(next));
+        } catch {
+          // ignore storage errors
+        }
+        setHistory(next);
+        if (IS_FIREBASE_ENABLED) {
+          void deleteHistoryFromFirebase(id);
+          void saveHistoryToFirebase(next);
+        }
       },
       clearHistory: () => {
         localStorage.removeItem(HISTORY_KEY);
         setHistory([]);
+        if (IS_FIREBASE_ENABLED) void saveHistoryToFirebase([]);
       },
     };
   }, [state, hasSavedGame, history, hintCache, requestHint]);

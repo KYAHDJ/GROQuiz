@@ -17,6 +17,13 @@ import {
   RotateCcw,
 } from "lucide-react";
 import { useQuiz } from "@/context/QuizContext";
+import {
+  IS_FIREBASE_ENABLED,
+  uploadPdfForProcessing,
+  deletePdfUpload,
+  deleteUploadSession,
+  makeSessionId,
+} from "@/lib/firebase/client";
 import type {
   FlashcardQuestion,
   HistoryRecord,
@@ -24,7 +31,7 @@ import type {
 } from "@/lib/types";
 import ConfirmModal from "./ConfirmModal";
 
-const MAX_PDF_MB = 4;
+const MAX_PDF_MB = 25;
 const TIME_OPTIONS = [15, 30, 45, 60, 90];
 
 interface BuilderItem {
@@ -32,6 +39,14 @@ interface BuilderItem {
   question: string;
   options: string[];
   correct: number;
+}
+
+interface QueueItem {
+  id: string;
+  name: string;
+  status: "uploading" | "ready" | "error";
+  url?: string;
+  text?: string;
 }
 
 function BrandLogo({ size = 36 }: { size?: number }) {
@@ -67,7 +82,6 @@ export default function PdfUpload({
   const fileRef = useRef<HTMLInputElement>(null);
   const [groqCount, setGroqCount] = useState<number | null>(null);
   const [mode, setModeLocal] = useState<QuizMode>(state.mode);
-  const [fileName, setFileName] = useState<string | null>(null);
   const [progress, setProgress] = useState<number | null>(null);
   const [progressLabel, setProgressLabel] = useState("");
   const [topics, setTopics] = useState("");
@@ -76,6 +90,9 @@ export default function PdfUpload({
   const [isDragging, setIsDragging] = useState(false);
   const [showAll, setShowAll] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  const [pdfQueue, setPdfQueue] = useState<QueueItem[]>([]);
+  const [sessionId, setSessionId] = useState<string | null>(null);
 
   const [builderItems, setBuilderItems] = useState<BuilderItem[]>([]);
   const [draft, setDraft] = useState<BuilderItem>({
@@ -117,13 +134,20 @@ export default function PdfUpload({
 
   const clearError = () => setError(null);
 
+  const handleGenerate = async () => {
+    if (pastedText.trim().length === 0) {
+      setError("Paste some text first — that's what the questions come from.");
+      return;
+    }
+    await startQuestionsFromText(pastedText);
+  };
+
   const startQuestionsFromText = async (text: string) => {
     if (text.trim().length < 20) {
       setError("Please provide at least a couple sentences of material.");
       return;
     }
     setError(null);
-    setFileName("Provided material");
 
     try {
       setProgressLabel("Generating questions…");
@@ -165,7 +189,6 @@ export default function PdfUpload({
         loadQuestions(questions);
         setScreen("quiz");
         setProgress(null);
-        setFileName(null);
       }, 400);
     } catch {
       setProgress(null);
@@ -173,62 +196,125 @@ export default function PdfUpload({
     }
   };
 
-  const handleFile = (file: File) => {
+  const addFile = async (file: File) => {
     setError(null);
 
     if (!file.name.toLowerCase().endsWith(".pdf")) {
-      setError("Please choose a PDF file.");
+      setError("Please choose PDF files only.");
       return;
     }
     if (file.size > MAX_PDF_MB * 1024 * 1024) {
       setError(
-        `That PDF is ${(file.size / 1024 / 1024).toFixed(1)} MB — the free host accepts up to ${MAX_PDF_MB} MB. Use a smaller PDF or paste the text below instead.`
+        `${file.name} is ${(file.size / 1024 / 1024).toFixed(1)} MB — keep each PDF under ${MAX_PDF_MB} MB.`
       );
-      setInputMode("paste");
       return;
     }
 
-    setFileName(file.name);
-    parsePdf(file);
+    const sid = sessionId ?? makeSessionId();
+    if (!sessionId) setSessionId(sid);
+
+    const id = `q-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+    const item: QueueItem = { id, name: file.name, status: "uploading" };
+    setPdfQueue((prev) => [...prev, item]);
+
+    if (IS_FIREBASE_ENABLED) {
+      const url = await uploadPdfForProcessing(file, sid);
+      setPdfQueue((prev) =>
+        prev.map((q) =>
+          q.id === id
+            ? { ...q, status: url ? "ready" : "error", ...(url ? { url } : {}) }
+            : q
+        )
+      );
+    } else {
+      try {
+        const body = new FormData();
+        body.append("file", file);
+        const parseRes = await fetch("/api/parse-pdf", { method: "POST", body });
+        const parseData = await parseRes.json();
+        if (!parseRes.ok) throw new Error(parseData?.error ?? "Couldn't read that PDF.");
+        setPdfQueue((prev) =>
+          prev.map((q) => (q.id === id ? { ...q, status: "ready", text: parseData.text } : q))
+        );
+      } catch (err) {
+        setError(err instanceof Error ? err.message : "Couldn't read that PDF.");
+        setPdfQueue((prev) => prev.filter((q) => q.id !== id));
+        return;
+      }
+    }
   };
 
-  const parsePdf = async (file: File) => {
+  const removeFromQueue = (id: string) => {
+    const item = pdfQueue.find((q) => q.id === id);
+    setPdfQueue((prev) => prev.filter((q) => q.id !== id));
+    if (item?.url) {
+      void deletePdfUpload(item.url);
+    }
+  };
+
+  const generateFromPdfs = async (items: QueueItem[]) => {
+    setError(null);
+    const sid = sessionId;
     try {
-      setProgressLabel("Reading PDF…");
-      setProgress(10);
+      setProgressLabel("Reading PDFs…");
+      setProgress(60);
 
-      const parseBody = new FormData();
-      parseBody.append("file", file);
-      const parseRes = await fetch("/api/parse-pdf", { method: "POST", body: parseBody });
-      const parseData = await parseRes.json();
+      let genData: { questions?: FlashcardQuestion[]; error?: string } | null = null;
+      for (let attempt = 1; attempt <= 3; attempt++) {
+        if (attempt > 1) {
+          setProgressLabel(`Still generating questions… (attempt ${attempt}/3)`);
+          await new Promise((r) => setTimeout(r, 8000));
+        }
+        const genRes = await fetch("/api/generate-questions", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            pdfs: items.map((i) => ({ name: i.name, url: i.url })),
+            topics,
+            difficulty: mode === "hard" ? 4 : 3,
+          }),
+        });
+        genData = await genRes.json();
+        if (genRes.ok) break;
+      }
 
-      if (!parseRes.ok) {
-        setProgress(null);
-        setError(parseData.error ?? "We couldn't read that PDF.");
+      if (!genData || !Array.isArray(genData.questions) || genData.questions.length === 0) {
+        setError(
+          genData?.error ??
+            "We couldn't generate questions from these PDFs. Try again in a minute."
+        );
         return;
       }
 
-      const text = parseData.text as string;
-      setProgressLabel("Generating questions…");
-      setProgress(60);
-      await startQuestionsFromText(text);
-    } catch (err) {
+      const questions: FlashcardQuestion[] = genData.questions;
+      setProgress(100);
+      await new Promise((r) => setTimeout(r, 400));
+      loadQuestions(questions);
+      setScreen("quiz");
+    } catch {
+      setError("Something went wrong while generating questions. Please try again.");
+    } finally {
+      if (sid) {
+        void deleteUploadSession(sid);
+      }
+      setSessionId(null);
+      setPdfQueue([]);
       setProgress(null);
-      setError(
-        err instanceof TypeError && err.message.includes("413")
-          ? `This PDF is larger than the ${MAX_PDF_MB} MB the host allows. Paste the text below instead.`
-          : "Something went wrong while uploading. Please try again."
-      );
-      setInputMode("paste");
     }
   };
 
-  const handleGenerate = async () => {
-    if (pastedText.trim().length === 0) {
-      setError("Paste some text first — that's what the questions come from.");
-      return;
+  const generateFromQueue = async () => {
+    if (active) return;
+    const firebaseFiles = pdfQueue.filter((q) => q.status === "ready" && q.url);
+    const textFiles = pdfQueue.filter((q) => q.status === "ready" && q.text);
+    if (firebaseFiles.length > 0) {
+      await generateFromPdfs(firebaseFiles);
+    } else if (textFiles.length > 0) {
+      const combined = textFiles.map((q) => q.text ?? "").join("\n\n");
+      await startQuestionsFromText(combined);
+    } else {
+      setError("Wait for the PDFs to finish uploading, or add a file first.");
     }
-    await startQuestionsFromText(pastedText);
   };
 
   const addBuilderQuestion = () => {
@@ -274,6 +360,7 @@ export default function PdfUpload({
   };
 
   const active = progress !== null;
+  const readyCount = pdfQueue.filter((q) => q.status === "ready").length;
   const visibleHistory = showAll ? history : history.slice(0, 5);
   const accFor = (r: HistoryRecord) => {
     const total = r.results.length || r.stats.answered;
@@ -335,7 +422,7 @@ export default function PdfUpload({
             </span>
           </h1>
           <p className="text-fluid-base text-[#94A3B8]">
-            Upload a PDF, paste text, or build your own — an adaptive quiz that
+            Upload PDFs, paste text, or build your own — an adaptive quiz that
             adjusts to your answers.
           </p>
         </div>
@@ -498,84 +585,148 @@ export default function PdfUpload({
         </div>
 
         {inputMode === "upload" ? (
-          <div
-            onDragOver={(e) => {
-              e.preventDefault();
-              setIsDragging(true);
-            }}
-            onDragLeave={() => setIsDragging(false)}
-            onDrop={(e) => {
-              e.preventDefault();
-              setIsDragging(false);
-              const f = e.dataTransfer.files?.[0];
-              if (f && !active) handleFile(f);
-            }}
-            onClick={() => !active && fileRef.current?.click()}
-            className={`rounded-2xl border-2 border-dashed p-8 sm:p-10 md:p-12 flex flex-col items-center gap-4 transition-all duration-200 cursor-pointer ${
-              isDragging || active
-                ? "border-cyan-400 bg-cyan-400/10"
-                : "border-[#334155] bg-[#1E293B] hover:border-[#475569]"
-            }`}
-          >
-            <input
-              ref={fileRef}
-              type="file"
-              accept="application/pdf"
-              className="hidden"
-              onChange={(e) => {
-                const f = e.target.files?.[0];
-                if (f) handleFile(f);
+          <div className="space-y-3">
+            <div
+              onDragOver={(e) => {
+                e.preventDefault();
+                setIsDragging(true);
               }}
-            />
+              onDragLeave={() => setIsDragging(false)}
+              onDrop={(e) => {
+                e.preventDefault();
+                setIsDragging(false);
+                const files = Array.from(e.dataTransfer.files ?? []);
+                files.forEach((f) => void addFile(f));
+              }}
+              onClick={() => !active && fileRef.current?.click()}
+              className={`rounded-2xl border-2 border-dashed p-8 sm:p-10 md:p-12 flex flex-col items-center gap-4 transition-all duration-200 cursor-pointer ${
+                isDragging || active
+                  ? "border-cyan-400 bg-cyan-400/10"
+                  : "border-[#334155] bg-[#1E293B] hover:border-[#475569]"
+              }`}
+            >
+              <input
+                ref={fileRef}
+                type="file"
+                accept="application/pdf"
+                multiple
+                className="hidden"
+                onChange={(e) => {
+                  const files = Array.from(e.target.files ?? []);
+                  files.forEach((f) => void addFile(f));
+                  e.target.value = "";
+                }}
+              />
 
-            {progress !== null ? (
-              <>
-                <Loader2 size={32} className="text-cyan-400 animate-spin" />
-                {fileName && (
-                  <p className="text-sm text-[#E2E8F0] font-medium flex items-center gap-2 [overflow-wrap:anywhere]">
-                    <FileText size={14} className="shrink-0 text-cyan-400" />
-                    <span>{fileName}</span>
-                  </p>
-                )}
-                <p className="text-xs text-cyan-400">{progressLabel}</p>
-                <div className="w-full max-w-xs h-1.5 bg-[#0F172A] rounded-full overflow-hidden">
-                  <div
-                    className="h-full bg-gradient-to-r from-cyan-500 to-violet-500 rounded-full transition-all duration-300"
-                    style={{ width: `${progress}%` }}
-                  />
-                </div>
-              </>
-            ) : (
-              <>
-                <div className={`w-16 h-16 rounded-2xl flex items-center justify-center transition-colors ${isDragging ? "bg-cyan-400/20" : "bg-[#0F172A]"}`}>
-                  <Upload size={32} className={isDragging ? "text-cyan-400" : "text-[#475569]"} />
-                </div>
-                <div className="text-center">
-                  <p className="text-[#94A3B8] font-medium [overflow-wrap:anywhere]">
-                    Drag & drop your PDF here
-                  </p>
-                  <p className="text-sm text-[#64748B] mt-1">
-                    or{" "}
-                    <button
-                      type="button"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        setInputMode("paste");
-                      }}
-                      className="text-cyan-400 hover:underline"
+              {progress !== null ? (
+                <>
+                  <Loader2 size={32} className="text-cyan-400 animate-spin" />
+                  {pdfQueue.length > 0 && (
+                    <p className="text-sm text-[#E2E8F0] font-medium flex items-center gap-2">
+                      <FileText size={14} className="shrink-0 text-cyan-400" />
+                      <span>
+                        {pdfQueue.length} PDF{pdfQueue.length > 1 ? "s" : ""}
+                      </span>
+                    </p>
+                  )}
+                  <p className="text-xs text-cyan-400">{progressLabel}</p>
+                  <div className="w-full max-w-xs h-1.5 bg-[#0F172A] rounded-full overflow-hidden">
+                    <div
+                      className="h-full bg-gradient-to-r from-cyan-500 to-violet-500 rounded-full transition-all duration-300"
+                      style={{ width: `${progress}%` }}
+                    />
+                  </div>
+                </>
+              ) : (
+                <>
+                  <div className={`w-16 h-16 rounded-2xl flex items-center justify-center transition-colors ${isDragging ? "bg-cyan-400/20" : "bg-[#0F172A]"}`}>
+                    <Upload size={32} className={isDragging ? "text-cyan-400" : "text-[#475569]"} />
+                  </div>
+                  <div className="text-center">
+                    <p className="text-[#94A3B8] font-medium [overflow-wrap:anywhere]">
+                      Drag & drop PDFs here
+                    </p>
+                    <p className="text-sm text-[#64748B] mt-1">
+                      or{" "}
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setInputMode("paste");
+                        }}
+                        className="text-cyan-400 hover:underline"
+                      >
+                        paste text instead
+                      </button>
+                    </p>
+                    <p className="text-xs text-[#64748B] mt-3">
+                      Add several PDFs for one combined quiz. Your files are
+                      uploaded to a private temp folder and auto-deleted after
+                      the quiz is generated — never stored. Max {MAX_PDF_MB} MB each.
+                    </p>
+                  </div>
+                  <span className="mt-1 px-6 py-2.5 rounded-xl bg-[#0F172A] border border-[#334155] text-sm text-[#94A3B8] hover:border-cyan-400/60 hover:text-[#E2E8F0] transition-all cursor-pointer">
+                    Browse files
+                  </span>
+                </>
+              )}
+            </div>
+
+            {pdfQueue.length > 0 && progress === null && (
+              <div className="bg-[#1E293B] rounded-2xl border border-[#334155] p-4 space-y-3 screen-enter">
+                <div className="space-y-2">
+                  {pdfQueue.map((item) => (
+                    <div
+                      key={item.id}
+                      className="flex items-center gap-3 bg-[#0F172A] rounded-xl border border-[#334155] px-3 py-2.5"
                     >
-                      paste text instead
-                    </button>
-                  </p>
-                  <p className="text-xs text-[#64748B] mt-3">
-                    Text is extracted on the fly — your document is never stored. Max{" "}
-                    {MAX_PDF_MB} MB.
-                  </p>
+                      <FileText
+                        size={15}
+                        className={`shrink-0 ${
+                          item.status === "ready"
+                            ? "text-cyan-400"
+                            : item.status === "error"
+                              ? "text-red-400"
+                              : "text-[#64748B]"
+                        }`}
+                      />
+                      <span className="flex-1 min-w-0 text-sm text-[#E2E8F0] truncate">
+                        {item.name}
+                      </span>
+                      {item.status === "uploading" && (
+                        <Loader2 size={14} className="text-[#64748B] animate-spin shrink-0" />
+                      )}
+                      {item.status === "ready" && (
+                        <span className="text-[#64748B] text-xs shrink-0">
+                          {item.url ? "ready" : "read"}
+                        </span>
+                      )}
+                      {item.status === "error" && (
+                        <span className="text-red-400 text-xs shrink-0">failed</span>
+                      )}
+                      <button
+                        type="button"
+                        aria-label={`Remove ${item.name}`}
+                        onClick={() => removeFromQueue(item.id)}
+                        className="shrink-0 w-7 h-7 flex items-center justify-center rounded-lg text-[#64748B] hover:text-red-400 hover:bg-red-400/10 transition-colors"
+                      >
+                        <X size={14} />
+                      </button>
+                    </div>
+                  ))}
                 </div>
-                <span className="mt-1 px-6 py-2.5 rounded-xl bg-[#0F172A] border border-[#334155] text-sm text-[#94A3B8] hover:border-cyan-400/60 hover:text-[#E2E8F0] transition-all cursor-pointer">
-                  Browse files
-                </span>
-              </>
+
+                <button
+                  type="button"
+                  onClick={() => void generateFromQueue()}
+                  disabled={readyCount === 0}
+                  className="w-full py-3 rounded-xl font-semibold text-sm transition-all duration-200 disabled:opacity-40 disabled:cursor-not-allowed bg-gradient-to-r from-cyan-500 to-cyan-400 text-[#0F172A] hover:from-cyan-400 hover:to-cyan-300 shadow-lg shadow-cyan-500/20"
+                >
+                  {readyCount > 0
+                    ? `Generate quiz from ${readyCount} PDF${readyCount > 1 ? "s" : ""}`
+                    : "Uploading…"}
+                </button>
+              </div>
             )}
           </div>
         ) : inputMode === "paste" ? (

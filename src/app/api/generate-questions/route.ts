@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { chatWithFallback, DEFAULT_MODEL, DIFFICULTY_READABILITY, parseJsonContent } from "@/lib/groq";
+import { chatWithFallback, DEFAULT_MODEL, DIFFICULTY_READABILITY, parseJsonContent, parsePdfBuffer } from "@/lib/groq";
 import type { GenerateQuestionsRequest, GenerateQuestionsResponse, FlashcardQuestion, Difficulty } from "@/lib/types";
 
 export const runtime = "nodejs";
@@ -71,7 +71,46 @@ export async function POST(req: Request): Promise<NextResponse> {
     return NextResponse.json({ error: "Invalid JSON body" }, { status: 400 });
   }
 
-  const text = (body.text ?? "").trim();
+  let text = (body.text ?? "").trim();
+
+  if (!text && Array.isArray(body.pdfs) && body.pdfs.length > 0) {
+    const parts: string[] = [];
+    let scanned = false;
+    for (const pdf of body.pdfs.slice(0, 5)) {
+      const url = typeof pdf?.url === "string" ? pdf.url : "";
+      if (!url) continue;
+      try {
+        const res = await fetch(url, { cache: "no-store" });
+        if (!res.ok) continue;
+        const len = Number(res.headers.get("content-length") ?? 0);
+        if (len > 40 * 1024 * 1024) continue;
+        const buf = Buffer.from(await res.arrayBuffer());
+        const parsed = await parsePdfBuffer(buf);
+        if (parsed.text.trim().length >= 20) {
+          parts.push(
+            `Source document "${pdf.name ?? "PDF"}":\n${parsed.text}`
+          );
+        }
+      } catch (err) {
+        if (err instanceof Error && err.message === "EMPTY_TEXT") {
+          scanned = true;
+        }
+        console.warn("generate-questions: failed to fetch/parse PDF:", err);
+      }
+    }
+    text = parts.join("\n\n").trim();
+    if (text.length < 20) {
+      return NextResponse.json(
+        {
+          error: scanned
+            ? "These PDFs have no readable text layer (they look like scans). Upload text-based PDFs or paste the text below instead."
+            : "We couldn't read the uploaded PDFs. Try again or paste the text below instead.",
+        },
+        { status: 422 }
+      );
+    }
+  }
+
   if (!text) {
     return NextResponse.json({ error: "No source text provided" }, { status: 400 });
   }
