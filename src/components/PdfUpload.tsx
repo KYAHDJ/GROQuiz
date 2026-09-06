@@ -289,7 +289,7 @@ export default function PdfUpload({
       const questions: FlashcardQuestion[] = genData.questions;
       setProgress(100);
       await new Promise((r) => setTimeout(r, 400));
-      loadQuestions(questions);
+      loadQuestions(questions, { topics: topics.trim() || "PDF quiz" });
       setScreen("quiz");
     } catch {
       setError("Something went wrong while generating questions. Please try again.");
