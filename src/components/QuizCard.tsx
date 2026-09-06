@@ -284,13 +284,14 @@ export default function QuizCard() {
               rowClass =
                 "border-[#334155] bg-[#0F172A] text-[#64748B] cursor-not-allowed";
               extra = "scale-[0.92] origin-left py-1.5 text-xs opacity-70";
+            } else if (isSelected) {
+              rowClass =
+                "border-cyan-400 bg-cyan-400/10 text-[#E2E8F0] ring-2 ring-cyan-400/40";
+              badgeClass = `${badgeBase} border-cyan-400 bg-cyan-400 text-[#0F172A]`;
             } else if (fiftyActive) {
               rowClass =
-                "border-cyan-400/40 bg-cyan-400/5 text-[#E2E8F0] ring-1 ring-cyan-400/30";
+                "border-[#475569] bg-[#1E293B] text-[#E2E8F0] hover:border-cyan-400/70";
               extra = "py-4 text-base font-semibold";
-            } else if (isSelected) {
-              rowClass = "border-cyan-400 bg-cyan-400/10 text-[#E2E8F0]";
-              badgeClass = `${badgeBase} border-cyan-400 bg-cyan-400 text-[#0F172A]`;
             }
 
             return (

@@ -779,9 +779,12 @@ export function QuizProvider({ children }: { children: ReactNode }) {
     const s = stateRef.current;
     if (s.screen !== "quiz" || s.questions.length === 0) return;
     const answeredIds = new Set(s.results.map((r) => r.questionId));
+    let prefetched = 0;
     for (const q of s.questions) {
       if (answeredIds.has(q.id) || hintCacheRef.current[q.id]) continue;
+      if (prefetched >= 6) break;
       requestHint(q, s.stats.tier);
+      prefetched++;
     }
   }, [state.screen, state.currentIndex, state.questions, state.results, requestHint]);
 

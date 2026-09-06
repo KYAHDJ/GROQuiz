@@ -145,8 +145,8 @@ export default function GamePage() {
           <p className="text-base font-bold text-[#E2E8F0] tabular-nums">
             Q{idx} / {total}
           </p>
-          <div className="flex gap-1 flex-wrap justify-center">
-            {state.questions.map((_, i) => {
+          <div className="flex gap-1 flex-wrap justify-center items-center">
+            {state.questions.slice(0, 20).map((_, i) => {
               const st = answeredFor(i);
               return (
                 <div
@@ -165,6 +165,11 @@ export default function GamePage() {
                 />
               );
             })}
+            {total > 20 && (
+              <span className="text-[10px] font-semibold text-[#64748B] ml-1">
+                +{total - 20}
+              </span>
+            )}
           </div>
         </div>
 

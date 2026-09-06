@@ -47,10 +47,12 @@ function sanitizeQuestions(parsed: unknown, difficulty: Difficulty, count: numbe
     const validIndex =
       correctIndex >= 0 && correctIndex < options.length ? correctIndex : 0;
     const diff = Math.max(1, Math.min(5, Number(q.initialDifficulty) || difficulty));
+    const question = String(q.question ?? "").trim();
+    if (question.length < 10) continue;
 
     out.push({
       id: `gen-${out.length}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
-      question: String(q.question ?? ""),
+      question,
       options,
       correctIndex: validIndex,
       explanation: String(q.explanation ?? "No explanation provided."),
@@ -61,6 +63,72 @@ function sanitizeQuestions(parsed: unknown, difficulty: Difficulty, count: numbe
   }
 
   return out;
+}
+
+function chunkText(text: string, size: number): string[] {
+  const paragraphs = text.split(/\n\s*\n/);
+  const chunks: string[] = [];
+  let cur = "";
+  for (const p of paragraphs) {
+    if ((cur + "\n\n" + p).length > size && cur) {
+      chunks.push(cur.trim());
+      cur = p;
+    } else {
+      cur = cur ? cur + "\n\n" + p : p;
+    }
+  }
+  if (cur.trim()) chunks.push(cur.trim());
+  if (chunks.length === 0 && text.trim()) chunks.push(text.trim());
+  return chunks;
+}
+
+function buildPrompt(opts: {
+  block: string;
+  count: number;
+  difficulty: Difficulty;
+  topicsLine: string;
+  seed: number;
+  style: string;
+  questionTypes: string;
+  used: string[];
+}): string {
+  const { block, count, difficulty, topicsLine, seed, style, questionTypes, used } = opts;
+  const uniqueness = used.length
+    ? `- Questions written so far (do NOT repeat these or their answer options):\n  ${used.map((q) => `"${q}"`).join("\n  ")}\n`
+    : "";
+  return `You are an expert quiz writer famous for NEVER repeating yourself. Create ${count} multiple-choice flashcards from the given source material. This is round #${seed} — use a ${style} this time.
+
+Source text:
+${block}
+
+${topicsLine}
+Requested difficulty: ${difficulty} (1=beginner, 5=expert).
+READABILITY RULE — the wording itself must match this level exactly:
+${DIFFICULTY_READABILITY[difficulty]}
+
+UNIQUENESS RULES — very important:
+- Each of the ${count} questions must use a DIFFERENT style and a DIFFERENT type (e.g. one definition, one cause-and-effect, one real-life application). Vary question types among: ${questionTypes}.
+- No two questions may share the same sentence pattern, the same opening words, or the same correct answer.
+- Write each question in your own fresh words. Never copy phrasing from the examples or from other questions.
+- Harder difficulty means harder READING, not trick questions: all answers must still be directly findable in the source text.
+${uniqueness}
+STRICT QUALITY RULE:
+- The source text may have OCR/PDF artifacts. Fix ALL of them. Broken or split words (e.g. "systema tic", "deter- mined", "mechanis m"), typos, spacing errors, and grammar mistakes MUST be corrected.
+- Every question, option, and explanation MUST be grammatically correct, properly spaced, and smoothly readable English. No machine-sounding or garbled text, ever. This rule is mandatory and cannot be skipped.
+
+CRITICAL: Respond with ONLY one valid JSON object containing a single key "questions". No markdown, no prose around it. Shape:
+{
+  "questions": [
+    {
+      "question": "string - a clear question or fill-in-the-blank prompt",
+      "options": ["string", "string", "string", "string"] - exactly 4 answer choices",
+      "correctIndex": number - the 0-based index of the correct option",
+      "explanation": "string - 1-2 sentence explanation of why the answer is correct",
+      "initialDifficulty": number - ${difficulty} (match the requested difficulty)"
+    }
+  ]
+}
+Make the questions meaningful, test actual understanding, include plausible distractors, and randomize the position of the correct answer.`;
 }
 
 export async function POST(req: Request): Promise<NextResponse> {
@@ -116,14 +184,14 @@ export async function POST(req: Request): Promise<NextResponse> {
   }
 
   const difficulty = Math.max(1, Math.min(5, Number(body.difficulty) || 3)) as Difficulty;
-  const count = Math.max(3, Math.min(10, Number(body.count) || 5));
+  const perBlock = Math.max(3, Math.min(6, Number(body.count) || 5));
+  const BLOCK_SIZE = 6000;
+  const MAX_TOTAL = 30;
 
+  const blocks = chunkText(text, BLOCK_SIZE);
   const topicsLine = body.topics?.trim()
     ? `Focus on these topics: ${body.topics.trim()}\n`
     : "";
-
-  const seed = Math.floor(Math.random() * 1_000_000);
-  const style = READABILITY_STYLES[Math.floor(Math.random() * READABILITY_STYLES.length)];
   const questionTypes = [
     "definition",
     "cause-and-effect",
@@ -135,72 +203,66 @@ export async function POST(req: Request): Promise<NextResponse> {
   ]
     .sort(() => Math.random() - 0.5)
     .join(", ");
+  const seedBase = Math.floor(Math.random() * 1_000_000);
 
-  const prompt = `You are an expert quiz writer famous for NEVER repeating yourself. Create ${count} multiple-choice flashcards from the given source material. This is round #${seed} — use a ${style} this time.
+  const all: FlashcardQuestion[] = [];
+  const usedStrings: string[] = [];
+  let lastError: string | null = null;
 
-Source text:
-${text.slice(0, 6000)}
-
-${topicsLine}
-Requested difficulty: ${difficulty} (1=beginner, 5=expert).
-READABILITY RULE — the wording itself must match this level exactly:
-${DIFFICULTY_READABILITY[difficulty]}
-
-UNIQUENESS RULES — very important:
-- Each of the ${count} questions must use a DIFFERENT style and a DIFFERENT type (e.g. one definition, one cause-and-effect, one real-life application). Vary question types among: ${questionTypes}.
-- No two questions may share the same sentence pattern, the same opening words, or the same correct answer.
-- Write each question in your own fresh words. Never copy phrasing from the examples or from other questions.
-- Harder difficulty means harder READING, not trick questions: all answers must still be directly findable in the source text.
-
-STRICT QUALITY RULE:
-- The source text may have OCR/PDF artifacts. Fix ALL of them. Broken or split words (e.g. "systema tic", "deter- mined", "mechanis m"), typos, spacing errors, and grammar mistakes MUST be corrected.
-- Every question, option, and explanation MUST be grammatically correct, properly spaced, and smoothly readable English. No machine-sounding or garbled text, ever. This rule is mandatory and cannot be skipped.
-
-CRITICAL: Respond with ONLY one valid JSON object containing a single key "questions". No markdown, no prose around it. Shape:
-{
-  "questions": [
-    {
-      "question": "string - a clear question or fill-in-the-blank prompt",
-      "options": ["string", "string", "string", "string"] - exactly 4 answer choices",
-      "correctIndex": number - the 0-based index of the correct option",
-      "explanation": "string - 1-2 sentence explanation of why the answer is correct",
-      "initialDifficulty": number - ${difficulty} (match the requested difficulty)"
-    }
-  ]
-}
-Make the questions meaningful, test actual understanding, include plausible distractors, and randomize the position of the correct answer.`;
-
-  try {
-    const raw = await chatWithFallback({
-      model: DEFAULT_MODEL,
-      messages: [
-        {
-          role: "system",
-          content: "You output strictly valid JSON objects. Never include surrounding text.",
-        },
-        { role: "user", content: prompt },
-      ],
-      response_format: { type: "json_object" },
-      temperature: 0.9,
-      max_tokens: 2048,
+  for (let bi = 0; bi < blocks.length && all.length < MAX_TOTAL; bi++) {
+    const block = blocks[bi];
+    if (!block) continue;
+    const want = Math.min(perBlock, MAX_TOTAL - all.length);
+    const style = READABILITY_STYLES[Math.floor(Math.random() * READABILITY_STYLES.length)];
+    const prompt = buildPrompt({
+      block,
+      count: want,
+      difficulty,
+      topicsLine,
+      seed: seedBase + bi,
+      style,
+      questionTypes,
+      used: usedStrings,
     });
 
-    const parsed = extractJson(raw);
-    const questions = sanitizeQuestions(parsed, difficulty, count);
+    try {
+      const raw = await chatWithFallback({
+        model: DEFAULT_MODEL,
+        messages: [
+          {
+            role: "system",
+            content: "You output strictly valid JSON objects. Never include surrounding text.",
+          },
+          { role: "user", content: prompt },
+        ],
+        response_format: { type: "json_object" },
+        temperature: 0.9,
+        max_tokens: 2048,
+      });
 
-    if (questions.length === 0) {
-      return NextResponse.json(
-        { error: "Couldn't generate usable questions. Please try again." },
-        { status: 503 }
-      );
+      const parsed = extractJson(raw);
+      const qs = sanitizeQuestions(parsed, difficulty, want);
+      for (const q of qs) {
+        if (usedStrings.length < 30) usedStrings.push(q.question);
+      }
+      all.push(...qs);
+    } catch (err) {
+      lastError = err instanceof Error ? err.message : "generation failed";
+      console.warn(`generate-questions: block ${bi + 1}/${blocks.length} failed:`, err);
     }
+  }
 
-    return NextResponse.json({ questions } satisfies GenerateQuestionsResponse, { status: 200 });
-  } catch (err) {
-    console.error("generate-questions error:", err);
+  if (all.length === 0) {
     return NextResponse.json(
-      { error: "Questions couldn't be generated right now. Try again in a moment." },
+      { error: lastError ? "Questions couldn't be generated right now. Try again in a moment." : "No usable text found." },
       { status: 503 }
     );
   }
+
+  const questions = all.slice(0, MAX_TOTAL).map((q, i) => ({
+    ...q,
+    id: `gen-${i}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+  }));
+
+  return NextResponse.json({ questions } satisfies GenerateQuestionsResponse, { status: 200 });
 }

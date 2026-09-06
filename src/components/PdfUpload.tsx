@@ -30,6 +30,7 @@ import type {
   QuizMode,
 } from "@/lib/types";
 import ConfirmModal from "./ConfirmModal";
+import QuizNameModal from "./QuizNameModal";
 
 const MAX_PDF_MB = 50;
 const TIME_OPTIONS = [15, 30, 45, 60, 90];
@@ -103,6 +104,9 @@ export default function PdfUpload({
   });
   const [buildError, setBuildError] = useState<string | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<HistoryRecord | null>(null);
+  const [quizNameOpen, setQuizNameOpen] = useState(false);
+  const [nameInitial, setNameInitial] = useState("");
+  const pendingStartRef = useRef<((name: string) => void) | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -139,15 +143,22 @@ export default function PdfUpload({
       setError("Paste some text first — that's what the questions come from.");
       return;
     }
-    await startQuestionsFromText(pastedText);
+    promptName((name) => void startQuestionsFromText(pastedText, name));
   };
 
-  const startQuestionsFromText = async (text: string) => {
+  const promptName = (opener: (name: string) => void) => {
+    pendingStartRef.current = opener;
+    setNameInitial(topics);
+    setQuizNameOpen(true);
+  };
+
+  const startQuestionsFromText = async (text: string, quizName?: string) => {
     if (text.trim().length < 20) {
       setError("Please provide at least a couple sentences of material.");
       return;
     }
     setError(null);
+    const name = (quizName ?? topics).trim();
 
     try {
       setProgressLabel("Generating questions…");
@@ -164,7 +175,7 @@ export default function PdfUpload({
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             text,
-            topics,
+            topics: name,
             difficulty: mode === "hard" ? 4 : 3,
           }),
         });
@@ -184,9 +195,9 @@ export default function PdfUpload({
       const questions: FlashcardQuestion[] = genData.questions;
 
       setProgress(100);
-      setSource(text, topics);
+      setSource(text, name);
       setTimeout(() => {
-        loadQuestions(questions);
+        loadQuestions(questions, { topics: name || "Provided material" });
         setScreen("quiz");
         setProgress(null);
       }, 400);
@@ -252,7 +263,7 @@ export default function PdfUpload({
     }
   };
 
-  const generateFromPdfs = async (items: QueueItem[]) => {
+  const generateFromPdfs = async (items: QueueItem[], quizName: string) => {
     setError(null);
     const sid = sessionId;
     try {
@@ -270,7 +281,7 @@ export default function PdfUpload({
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             pdfs: items.map((i) => ({ name: i.name, url: i.url })),
-            topics,
+            topics: quizName,
             difficulty: mode === "hard" ? 4 : 3,
           }),
         });
@@ -289,7 +300,7 @@ export default function PdfUpload({
       const questions: FlashcardQuestion[] = genData.questions;
       setProgress(100);
       await new Promise((r) => setTimeout(r, 400));
-      loadQuestions(questions, { topics: topics.trim() || "PDF quiz" });
+      loadQuestions(questions, { topics: quizName || "PDF quiz" });
       setScreen("quiz");
     } catch {
       setError("Something went wrong while generating questions. Please try again.");
@@ -303,18 +314,21 @@ export default function PdfUpload({
     }
   };
 
-  const generateFromQueue = async () => {
+  const generateFromQueue = () => {
     if (active) return;
     const firebaseFiles = pdfQueue.filter((q) => q.status === "ready" && q.url);
     const textFiles = pdfQueue.filter((q) => q.status === "ready" && q.text);
+    let opener: (name: string) => void;
     if (firebaseFiles.length > 0) {
-      await generateFromPdfs(firebaseFiles);
+      opener = (name) => void generateFromPdfs(firebaseFiles, name);
     } else if (textFiles.length > 0) {
       const combined = textFiles.map((q) => q.text ?? "").join("\n\n");
-      await startQuestionsFromText(combined);
+      opener = (name) => void startQuestionsFromText(combined, name);
     } else {
       setError("Wait for the PDFs to finish uploading, or add a file first.");
+      return;
     }
+    promptName(opener);
   };
 
   const addBuilderQuestion = () => {
@@ -345,17 +359,19 @@ export default function PdfUpload({
       setBuildError("Add at least 3 questions to start the quiz.");
       return;
     }
-    const questions: FlashcardQuestion[] = builderItems.map((b) => ({
-      id: b.id,
-      question: b.question,
-      options: b.options,
-      correctIndex: b.correct,
-      explanation: "",
-      initialDifficulty: mode === "hard" ? 4 : 3,
-    }));
-    loadQuestions(questions, {
-      manual: true,
-      topics: topics.trim() || "My custom quiz",
+    promptName((name) => {
+      const questions: FlashcardQuestion[] = builderItems.map((b) => ({
+        id: b.id,
+        question: b.question,
+        options: b.options,
+        correctIndex: b.correct,
+        explanation: "",
+        initialDifficulty: mode === "hard" ? 4 : 3,
+      }));
+      loadQuestions(questions, {
+        manual: true,
+        topics: name || "My custom quiz",
+      });
     });
   };
 
@@ -964,10 +980,12 @@ export default function PdfUpload({
                         title="Take again"
                         onClick={(e) => {
                           e.stopPropagation();
-                          loadQuestions(r.questions, {
-                            manual: true,
-                            topics: r.topic,
-                          });
+                          promptName((name) =>
+                            loadQuestions(r.questions, {
+                              manual: true,
+                              topics: name || r.topic,
+                            })
+                          );
                         }}
                         className="w-8 h-8 flex items-center justify-center rounded-lg text-[#64748B] hover:text-cyan-400 hover:bg-cyan-400/10 transition-colors"
                       >
@@ -1003,6 +1021,21 @@ export default function PdfUpload({
         <Star size={10} className="text-violet-500" />
         GROQuiz
       </footer>
+
+      <QuizNameModal
+        open={quizNameOpen}
+        initial={nameInitial}
+        onSubmit={(name) => {
+          const run = pendingStartRef.current;
+          pendingStartRef.current = null;
+          setQuizNameOpen(false);
+          if (run) run(name);
+        }}
+        onCancel={() => {
+          pendingStartRef.current = null;
+          setQuizNameOpen(false);
+        }}
+      />
 
       <ConfirmModal
         open={Boolean(deleteTarget)}
